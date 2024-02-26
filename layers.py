@@ -20,10 +20,10 @@ class Layer4():
         self.num_neurons = self.num_base_neurons*self.num_neurons_per_minicolumn
 
         self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay)
-        # self.attractors = Attractors(self.num_neurons)
         self.attractors = Attractors(self.num_base_neurons)
-
         self.start_sdr = self.create_start_sdr()
+
+        self.parameters = ['connections', 'attractors', 'start_sdr']
         self.reset()
 
     def create_start_sdr(self):
@@ -39,28 +39,6 @@ class Layer4():
         input_start = self.encode_start(feature)
         self.prediction = self.connections(input_start)
         self.prev_sdr = input_start
-
-
-    def calculate_to_forward(self, feature, prediction_out, prediction_sdr):
-
-        feature = feature.bin.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        prediction_sdr = prediction_sdr.bin.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        result = torch.zeros_like(feature)
-
-        prediction_out = prediction_out.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        prediction_out_argmax = torch.argmax(prediction_out, dim=-1)
-
-        ix = torch.argwhere(torch.logical_and(prediction_sdr.sum(dim=-1) >= 1,
-                                              feature.sum(dim=-1).bool()
-                                              ))
-        result[ix, prediction_out_argmax[ix]] = True
-
-        ix = torch.argwhere(torch.logical_and(prediction_sdr.sum(dim=-1) == 0,
-                                              feature.sum(dim=-1).bool()
-                                              ))
-        result[ix] = True
-
-        return SDR.from_bin(result.reshape(-1))
 
     def calculate_to_train(self, feature, prediction_out, prediction_sdr):
 
@@ -79,14 +57,6 @@ class Layer4():
         result = torch.logical_and(feature_bin, for_training_encoder)
         return SDR.from_bin(result.reshape(-1)), boundary
 
-
-    def process_input_full(self, feature, prediction_out):
-        prediction_sdr = SDR.from_nodes_threshold(prediction_out, threshold=0.5)
-
-        to_forward_sdr = self.calculate_to_forward(feature, prediction_out, prediction_sdr)
-        to_train_sdr = self.calculate_to_train(feature, prediction_out, prediction_sdr)
-
-        return to_train_sdr, to_forward_sdr
 
     def process_input(self, feature, prediction_out):
         prediction_sdr = SDR.from_nodes_threshold(prediction_out, threshold=0.5)
@@ -137,8 +107,29 @@ class Layer4():
         self.prediction = None
         self.prev_sdr = None
 
-        # self.prediction = self.connections(self.start_sdr)
-        # self.prev_sdr = self.start_sdr
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save(path=None)
+
+
+        if path != None: torch.save(to_save, path)
+        else: return to_save
+
+
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor):
+                attr = weight
+            else:
+                attr.load(weight)
+        
+
+
 
 
 if __name__ == "__main__":

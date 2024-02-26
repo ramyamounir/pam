@@ -31,6 +31,8 @@ class SDR():
             self.ix = self.to_tensor(ix).unique()
             self.S = len(self.ix)
 
+        self.parameters = ['N', 'S', 'ix']
+
     def to_tensor(self, val):
         if isinstance(val, torch.Tensor):
             return val
@@ -142,6 +144,28 @@ class SDR():
     def __len__(self):
         return self.S
 
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if (isinstance(attr, torch.Tensor) or isinstance(attr, int)) else attr.save()
+
+        if path != None: torch.save(to_save, path)
+        else: return to_save
+
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor) or isinstance(attr, int):
+                attr = weight
+            else:
+                attr.load(weight)
+
+
+
+
 
 class MyMessagePassing(MessagePassing):
     def __init__(self):
@@ -171,8 +195,8 @@ class Connections:
 
         fully_connected = torch.cartesian_prod(torch.arange(self.in_dim), torch.arange(self.out_dim))
         self.edge_index = fully_connected[torch.randperm(len(fully_connected))[:int(len(fully_connected)*self.connections_density)]].t().contiguous()
-        # self.edge_attr = F.tanh(torch.normal(-0.5, 0.5, size=(self.edge_index.shape[-1],1)))
         self.edge_attr = torch.ones((self.edge_index.shape[-1],1))*-1
+        self.parameters = ['edge_index', 'edge_attr']
 
     def __call__(self, x_in_sdr):
         assert isinstance(x_in_sdr, SDR), "input must be an SDR"
@@ -195,21 +219,6 @@ class Connections:
         self.edge_attr[good_edges_ix] += 0.1
         self.edge_attr[bad_edges_ix] -= 0.005
 
-        # if len(good_edges_ix)>0: self.edge_attr[good_edges_ix] += 10.0/len(good_edges_ix)
-        # if len(bad_edges_ix)>0: self.edge_attr[bad_edges_ix] -= 10.0/len(bad_edges_ix)
-
-        # print(100.0/len(good_edges_ix), 0.1)
-        # print(100.0/len(bad_edges_ix), 0.008)
-        # self.edge_attr[good_edges_ix] += (len(bad_edges_ix)/self.out_dim) * 0.1
-        # self.edge_attr[bad_edges_ix] -= (len(good_edges_ix)/self.out_dim) * 0.1
-        # self.edge_attr[good_edges_ix] += 1.0/len(good_edges_ix)
-        # self.edge_attr[bad_edges_ix] -= 1.0/len(bad_edges_ix)
-        # self.edge_attr[good_edges_ix] += (len(bad_edges_ix)/len(self.edge_attr))
-        # self.edge_attr[bad_edges_ix] -= (len(good_edges_ix)/len(self.edge_attr))
-        # self.edge_attr[good_edges_ix] += 0.1
-        # self.edge_attr[bad_edges_ix] -= 0.05
-
-
         # decay
         self.edge_attr *= self.connections_decay
 
@@ -217,7 +226,24 @@ class Connections:
         self.edge_attr[good_edges_ix] = torch.clamp_max(self.edge_attr[good_edges_ix], max=1.0)
         self.edge_attr[bad_edges_ix] = torch.clamp_min(self.edge_attr[bad_edges_ix], min=-1.0)
 
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save()
 
+        if path != None: torch.save(to_save, path)
+        else: return to_save
+
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor):
+                attr = weight
+            else:
+                attr.load(weight)
 
 
 class Attractors:
@@ -226,10 +252,10 @@ class Attractors:
         self.message_passing = MyMessagePassing()
         self.initialize()
 
-    def initialize(self,):
+    def initialize(self):
         self.edge_index = torch.empty((2,0),dtype=torch.long)
         self.edge_attr = torch.empty((0,1))
-
+        self.parameters = ['edge_index', 'edge_attr']
 
     def __call__(self, x_in_sdr):
         assert isinstance(x_in_sdr, SDR), "input must be an SDR"
@@ -239,7 +265,6 @@ class Attractors:
     def check_add(self, edges):
         to_be_added = find_a_in_b(self.edge_index, edges, inv=True)
         self.edge_index = torch.cat([self.edge_index, edges.t()[to_be_added].t()], dim=1)
-        # self.edge_attr = torch.cat([self.edge_attr, torch.zeros((len(to_be_added),1))], dim=0)
         self.edge_attr = torch.cat([self.edge_attr, torch.ones((len(to_be_added),1))*-1 ], dim=0)
 
     def adjust_edges(self, edges, mod):
@@ -249,16 +274,31 @@ class Attractors:
 
     def process(self, single, union):
 
-        # compute edges to strengthen and weaken
         edges_strengthen = single.val[erdos_renyi_graph(len(single), edge_prob=1.0, directed=True)]
         edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
 
         self.adjust_edges(edges_strengthen, 0.1)
         self.adjust_edges(edges_weaken, -0.1)
 
-        # strenghen edges
-        # if edges_strengthen.shape[-1] > 0: self.adjust_edges(edges_strengthen, 0.1/edges_strengthen.shape[-1])
-        # if edges_weaken.shape[-1] > 0: self.adjust_edges(edges_weaken, -0.1/edges_weaken.shape[-1])
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save()
+
+        if path != None: torch.save(to_save, path)
+        else: return to_save
+
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor):
+                attr = weight
+            else:
+                attr.load(weight)
+
 
 
     def visualize(self):
