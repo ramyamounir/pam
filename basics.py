@@ -159,7 +159,7 @@ class SDR():
         for name, weight in parameters.items():
             attr = getattr(self, name)
             if isinstance(attr, torch.Tensor) or isinstance(attr, int):
-                attr = weight
+                setattr(self, name, weight)
             else:
                 attr.load(weight)
 
@@ -241,7 +241,7 @@ class Connections:
         for name, weight in parameters.items():
             attr = getattr(self, name)
             if isinstance(attr, torch.Tensor):
-                attr = weight
+                setattr(self, name, weight)
             else:
                 attr.load(weight)
 
@@ -295,11 +295,9 @@ class Attractors:
         for name, weight in parameters.items():
             attr = getattr(self, name)
             if isinstance(attr, torch.Tensor):
-                attr = weight
+                setattr(self, name, weight)
             else:
                 attr.load(weight)
-
-
 
     def visualize(self):
 
@@ -314,6 +312,62 @@ class Attractors:
 
 
 
+class Attractors2:
+    def __init__(self, dim, connections_density=0.5, connections_decay=1.0):
+        self.dim = dim
+        self.connections_density = connections_density
+        self.connections_decay = connections_decay
+
+        self.message_passing = MyMessagePassing()
+        self.initialize()
+
+    def initialize(self):
+        fully_connected = torch.cartesian_prod(torch.arange(self.dim), torch.arange(self.dim))
+        self.edge_index = fully_connected[torch.randperm(len(fully_connected))[:int(len(fully_connected)*self.connections_density)]].t().contiguous()
+        self.edge_attr = torch.ones((self.edge_index.shape[-1],1))*-1
+        self.parameters = ['edge_index', 'edge_attr']
+
+    def __call__(self, x_in_sdr):
+        assert isinstance(x_in_sdr, SDR), "input must be an SDR"
+        x_in = x_in_sdr.to_nodes()
+        return self.message_passing(x_in, self.edge_index, self.edge_attr)
+
+    def adjust_edges(self, edges, mod):
+        edges_ix = find_a_in_b(edges, self.edge_index)
+        if len(edges_ix) == 0: return
+        mod = (mod / len(edges_ix))# * (self.dim**2/10000)
+        self.edge_attr[edges_ix] =  torch.clamp( self.edge_attr[edges_ix] + mod, min=-1.0, max=1.0)
+
+    def process(self, single, union):
+        edges_strengthen = single.val[erdos_renyi_graph(len(single), edge_prob=1.0, directed=True)]
+        edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
+
+        self.adjust_edges(edges_strengthen, 1.0)
+        self.adjust_edges(edges_weaken, -1.0)
+
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save()
+
+        if path != None: torch.save(to_save, path)
+        else: return to_save
+
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor):
+                setattr(self, name, weight)
+            else:
+                attr.load(weight)
+
+
+
+
+
 if __name__ == "__main__":
 
     dim = 128
@@ -322,7 +376,7 @@ if __name__ == "__main__":
 
 
 
-    att = Attractors(dim)
+    att = Attractors2(dim)
     inputs = [SDR(dim, S=S) for _ in range(num_patterns)]
     print(inputs)
 
@@ -331,28 +385,20 @@ if __name__ == "__main__":
         union += i
 
 
-    for i in tqdm(range(100)):
-
-        # train union
+    for i in tqdm(range(1000)):
         att.process(inputs[i%num_patterns], union)
-
-        # train generated
-        # init = union.choose(S=S)
-        # gen = SDR.from_nodes_topk(att(init), k=S)
-        # gen = SDR.from_nodes_threshold(att(init))
-        # att.adjust_edges(torch.cartesian_prod(init.val, (gen-union).val).t().contiguous(), -0.08)
-
-        
-
     
     for _ in range(10):
 
         res = union.choose(S=S)
+        print([res.overlap(i) for i in inputs])
 
         for _ in range(100):
             res = SDR.from_nodes_topk(att(res), k=S)
 
         print([res.overlap(i) for i in inputs])
+        print('\n')
+
 
 
 

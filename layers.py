@@ -1,5 +1,5 @@
 import torch
-from basics import SDR, Connections, Attractors
+from basics import SDR, Connections, Attractors, Attractors2
 from tqdm import tqdm
 import random
 from utils import plot_circle_grid
@@ -20,7 +20,7 @@ class Layer4():
         self.num_neurons = self.num_base_neurons*self.num_neurons_per_minicolumn
 
         self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay)
-        self.attractors = Attractors(self.num_base_neurons)
+        self.attractors = Attractors2(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay)
         self.start_sdr = self.create_start_sdr()
 
         self.parameters = ['connections', 'attractors', 'start_sdr']
@@ -64,9 +64,9 @@ class Layer4():
 
 
     def generate(self, prediction, it=100):
-        gen = prediction.choose(10)
+        gen = prediction.choose(self.sparsity)
         for _ in range(it):
-            gen = SDR.from_nodes_topk(self.attractors(gen), k=int(10)).intersect(prediction)
+            gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
             # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
         return gen
 
@@ -124,7 +124,7 @@ class Layer4():
         for name, weight in parameters.items():
             attr = getattr(self, name)
             if isinstance(attr, torch.Tensor):
-                attr = weight
+                setattr(self, name, weight)
             else:
                 attr.load(weight)
         
