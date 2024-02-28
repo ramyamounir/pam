@@ -63,6 +63,12 @@ class Layer4():
         return self.calculate_to_train(feature, prediction_out, prediction_sdr)
 
 
+    def generate_from(self, prediction, gen, it=100):
+        for _ in range(it):
+            gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
+        return gen
+
+
     def generate(self, prediction, it=100):
         gen = prediction.choose(self.sparsity)
         for _ in range(it):

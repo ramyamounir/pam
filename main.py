@@ -3,7 +3,6 @@ from dataset import TextDataset
 from layers import Layer4
 
 from tqdm import tqdm
-from english_words import get_english_words_set
 
 class Trainer():
     def __init__(self, D, K, S, T):
@@ -32,7 +31,7 @@ class Trainer():
 
     def train(self, data, num_epochs):
         for epoch in tqdm(range(num_epochs)):
-            for d in data:
+            for d in tqdm(data):
                 for c in d:
                     input_sdr = self.td.encode(c)
                     results = self.l4(input_sdr=input_sdr, train=True)
@@ -98,14 +97,32 @@ class Trainer():
         return result_set
 
 
+    def remove_noise(self, letters, n=1):
 
-        # # generate
-        # while True:
-        #     results = self.l4(input_sdr=input_sdr, train=False, gen=True)
-        #     gen = self.td.decode(results['generated'], overlap=8)
-        #     if len(gen) == 0: valid=False;break
-        #     print(gen, results['generated'])
-        #     input_sdr = results['generated']
+        self.l4.reset()
+        input_sdr = self.td.encode(letters[0])
+        results = self.l4(input_sdr=input_sdr, train=False, gen=False)
+        output = letters[0]
+
+        for l in letters[1:]:
+            input_sdr = self.td.encode(l)
+            gen = self.l4.generate_from(results['predicted'], input_sdr.add_noise(n))
+            decoded_gen = self.td.decode(gen, overlap=self.T)
+
+            if len(decoded_gen)>1: 
+                output += decoded_gen[0]
+                print('WARNING: Multiple generated')
+            elif len(decoded_gen) == 1:
+                output += decoded_gen[0]
+            elif len(decoded_gen) == 0:
+                break
+
+
+            results = self.l4(input_sdr=gen, train=False, gen=False)
+
+        return output
+
+
 
 
 
@@ -116,11 +133,12 @@ class Trainer():
 # data = ['can', 'cat', 'can', 'cab', 'cam', 'can']
 # data = ['raro']
 # data = ['kalolibaldor']
-# data = list(get_english_words_set(['web2'], lower=True))
 
-data = open('words.txt').read().splitlines()
-num_words = 100
-num_epochs = 1000
+data = open('data/words.txt').read().splitlines()
+# data = open('data/hunger.txt').read().splitlines()
+
+num_words = 10
+num_epochs = 100
 data = data[:num_words]
 
 
@@ -128,10 +146,23 @@ trainer = Trainer(D=128, K=8, S=10, T=8)
 
 # trainer.train(data, num_epochs)
 # trainer.inference(data)
-# trainer.save('test.pth')
+# trainer.save('saved_models/words_100.pth')
 
 
-trainer.load('test.pth')
+trainer.load('saved_models/words_10.pth')
+word = 'the'
+n=10
+counter = 0
+
+for _ in range(100):
+    res = trainer.remove_noise('the', n=n)
+    if res == word:
+        counter += 1
+
+print(counter/100)
+quit()
+
+
 # trainer.inference(data)
 res = trainer.generate('t', num_gen=10)
 print(res)

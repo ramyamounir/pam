@@ -84,6 +84,12 @@ class SDR():
     def from_bin(val):
         return SDR(len(val), ix=torch.argwhere(val==True))
 
+    def add_noise(self, n=1):
+        change_ix = torch.randperm(self.N)[:n]
+        binary = self.bin.clone()
+        binary[change_ix] = torch.logical_not(binary[change_ix])
+        return SDR.from_bin(binary)
+
     def to_nodes(self, pad=0):
         if pad>0:
             return F.pad(self.bin.float(), (0,pad), "constant", 0).unsqueeze(-1)
