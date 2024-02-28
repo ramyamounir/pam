@@ -187,11 +187,12 @@ class MyMessagePassing(MessagePassing):
         return aggr_out
 
 class Connections:
-    def __init__(self, in_dim, out_dim, connections_density=0.5, connections_decay=0.99):
+    def __init__(self, in_dim, out_dim, connections_density=0.5, connections_decay=1.00, learning_rate=100):
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.connections_density = connections_density
         self.connections_decay = connections_decay
+        self.learning_rate = learning_rate
         self.num_nodes = max(in_dim, out_dim)
 
         self.message_passing = MyMessagePassing()
@@ -224,6 +225,10 @@ class Connections:
         # adjust edges
         self.edge_attr[good_edges_ix] += 0.1
         self.edge_attr[bad_edges_ix] -= 0.005
+
+        # self.edge_attr[good_edges_ix] += (1.0 * self.learning_rate)/len(good_edges_ix)
+        # self.edge_attr[bad_edges_ix] -= (1.0 * self.learning_rate)/len(bad_edges_ix)
+
 
         # decay
         self.edge_attr *= self.connections_decay
@@ -319,10 +324,11 @@ class Attractors:
 
 
 class Attractors2:
-    def __init__(self, dim, connections_density=0.5, connections_decay=1.0):
+    def __init__(self, dim, connections_density=0.5, connections_decay=1.0, learning_rate=100):
         self.dim = dim
         self.connections_density = connections_density
         self.connections_decay = connections_decay
+        self.learning_rate = learning_rate
 
         self.message_passing = MyMessagePassing()
         self.initialize()
@@ -348,8 +354,8 @@ class Attractors2:
         edges_strengthen = single.val[erdos_renyi_graph(len(single), edge_prob=1.0, directed=True)]
         edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
 
-        self.adjust_edges(edges_strengthen, 1.0)
-        self.adjust_edges(edges_weaken, -1.0)
+        self.adjust_edges(edges_strengthen, 1.0 * self.learning_rate)
+        self.adjust_edges(edges_weaken, -1.0 * self.learning_rate)
 
     def save(self, path=None):
         to_save = {}

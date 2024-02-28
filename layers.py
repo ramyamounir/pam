@@ -12,6 +12,7 @@ class Layer4():
                  sparsity=0.02,
                  connections_density=0.5,
                  connections_decay=1.00,
+                 learning_rate=100,
                  ):
 
         self.num_base_neurons = num_base_neurons
@@ -19,8 +20,8 @@ class Layer4():
         self.sparsity = sparsity
         self.num_neurons = self.num_base_neurons*self.num_neurons_per_minicolumn
 
-        self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay)
-        self.attractors = Attractors2(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay)
+        self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
+        self.attractors = Attractors2(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
         self.start_sdr = self.create_start_sdr()
 
         self.parameters = ['connections', 'attractors', 'start_sdr']
@@ -73,7 +74,6 @@ class Layer4():
         gen = prediction.choose(self.sparsity)
         for _ in range(it):
             gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
-            # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
         return gen
 
     def create_output(self, predicted, generated, boundary):
@@ -92,16 +92,23 @@ class Layer4():
             generated = None if gen==False else self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
             return self.create_output(self.prediction, generated, False)
 
+        # train predictor
         processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
         if train: self.connections.train(self.prev_sdr, processed_input)
-
         if boundary:
             self.predict_start(input_sdr_expanded)
             generated = None if gen==False else self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
             return self.create_output(self.prediction, generated, True)
 
-        pred_sdr = SDR.from_nodes_threshold(self.prediction, threshold=0.5)
-        self.attractors.process(input_sdr, pred_sdr.reduce(self.num_neurons_per_minicolumn))
+        # train generative
+        reduced_pred = SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)
+        if train: self.attractors.process(input_sdr, reduced_pred)
+        pred_gen = self.generate_from(reduced_pred, input_sdr.add_noise(n=0))
+        if pred_gen.overlap(input_sdr) < 8:
+            self.predict_start(input_sdr_expanded)
+            generated = None if gen==False else self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            return self.create_output(self.prediction, generated, True)
+
 
         self.prediction = self.connections(processed_input)
         self.prev_sdr = processed_input

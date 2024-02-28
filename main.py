@@ -1,19 +1,33 @@
 import torch
 from dataset import TextDataset
 from layers import Layer4
+from collections import deque
 
+from tbw import TBWrapper, TBType
 from tqdm import tqdm
 
 class Trainer():
-    def __init__(self, D, K, S, T):
+    def __init__(self, D, K, S, T, L, log_dir='logs/model_1'):
         self.D=D
         self.K=K
         self.S=S
         self.T=T
+        self.L=L
+        self.create_writers(log_dir)
 
         self.td = TextDataset(dim=self.D, S=self.S)
-        self.l4 = Layer4(num_base_neurons=self.D, num_neurons_per_minicolumn=self.K, sparsity=S, connections_density=0.5, connections_decay=1.0)
+        self.l4 = Layer4(num_base_neurons=self.D, num_neurons_per_minicolumn=self.K, sparsity=S, connections_density=0.5, connections_decay=1.0, learning_rate=L)
         self.parameters = ['td', 'l4']
+
+    def create_writers(self, log_dir):
+        self.chars = ""
+        self.words_deque = deque(maxlen=100)
+
+        self.writer = TBWrapper(log_dir)
+        self.writer(TBType.TEXT, 'segmentation')
+        # self.writer(TBType.TEXT, 'generation')
+        # self.writer(TBType.TEXT, 'noise removal')
+        # self.writer(TBType.TEXT, 'correction')
 
     def inference(self, data):
         for d in data:
@@ -29,12 +43,41 @@ class Trainer():
             print('\n')
             self.l4.reset()
 
+    def log(self, letter, boundary):
+        if boundary:
+            self.words_deque.append(self.chars)
+            self.chars = ""
+
+        self.chars += letter
+
+        if len(self.words_deque) == 100:
+            print(self.words_deque)
+            quit()
+
+
     def train(self, data, num_epochs):
-        for epoch in tqdm(range(num_epochs)):
-            for d in tqdm(data):
-                for c in d:
+
+        # log_segmentation = ''
+        # counter = 0
+
+        for epoch in range(num_epochs):
+            for d in data:
+                for c in tqdm(d):
                     input_sdr = self.td.encode(c)
                     results = self.l4(input_sdr=input_sdr, train=True)
+
+                    # self.log(c, results['boundary'])
+
+                    # if 0 <= counter%1000 <= 100:
+                    #     if results['boundary']:
+                    #         log_segmentation += "|"
+                    #     log_segmentation += c
+
+                    #     if counter %1000 == 100:
+                    #         self.writer['segmentation'](log_segmentation)
+                    #         log_segmentation = ''
+
+                    # counter += 1
 
                 self.l4.reset()
 
@@ -129,43 +172,47 @@ class Trainer():
 
 # data = ['cato', 'cari', 'cano', 'cab', 'com']
 # data = ['caorto', 'coarti']
+data = ['Hi, my name is Ramy']
 # data = ['cato', 'coti']
 # data = ['can', 'cat', 'can', 'cab', 'cam', 'can']
 # data = ['raro']
 # data = ['kalolibaldor']
 
-data = open('data/words.txt').read().splitlines()
+# data = open('data/words.txt').read().splitlines()
 # data = open('data/hunger.txt').read().splitlines()
+# data = [' '.join(open('data/hunger.txt').read().splitlines())[:10_000]]
 
-num_words = 10
-num_epochs = 100
+num_words = len(data)
+num_epochs = 200
 data = data[:num_words]
 
 
-trainer = Trainer(D=128, K=8, S=10, T=8)
+trainer = Trainer(D=128, K=15, S=10, T=8, L=1)
 
 # trainer.train(data, num_epochs)
+# trainer.save('saved_models/hunger.pth')
 # trainer.inference(data)
-# trainer.save('saved_models/words_100.pth')
+# quit()
 
 
-trainer.load('saved_models/words_10.pth')
-word = 'the'
-n=10
+trainer.load('saved_models/hunger.pth')
+
+word = 'Hi, my name is'
+n=90
 counter = 0
 
-for _ in range(100):
-    res = trainer.remove_noise('the', n=n)
+for _ in range(10):
+    res = trainer.remove_noise(word, n=n)
+    print(res)
     if res == word:
         counter += 1
 
-print(counter/100)
-quit()
+print(counter/10)
 
 
 # trainer.inference(data)
-res = trainer.generate('t', num_gen=10)
-print(res)
+# res = trainer.generate('i', num_gen=1)
+# print(res)
 
 
 
