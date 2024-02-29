@@ -16,7 +16,7 @@ class Trainer():
         self.create_writers(log_dir)
 
         self.td = TextDataset(dim=self.D, S=self.S)
-        self.l4 = Layer4(num_base_neurons=self.D, num_neurons_per_minicolumn=self.K, sparsity=S, connections_density=0.5, connections_decay=1.0, learning_rate=L)
+        self.l4 = Layer4(num_base_neurons=self.D, num_neurons_per_minicolumn=self.K, sparsity=S, connections_density=0.5, connections_decay=1e-4, learning_rate=L)
         self.parameters = ['td', 'l4']
 
     def create_writers(self, log_dir):
@@ -60,9 +60,9 @@ class Trainer():
         # log_segmentation = ''
         # counter = 0
 
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs)):
             for d in data:
-                for c in tqdm(d):
+                for c in d:
                     input_sdr = self.td.encode(c)
                     results = self.l4(input_sdr=input_sdr, train=True)
 
@@ -171,48 +171,53 @@ class Trainer():
 
 
 # data = ['cato', 'cari', 'cano', 'cab', 'com']
-# data = ['caorto', 'coarti']
-data = ['Hi, my name is Ramy']
+# data = ['caortoti', 'coartito']
+# data = ['Hi, my name is Ramy']
 # data = ['cato', 'coti']
 # data = ['can', 'cat', 'can', 'cab', 'cam', 'can']
 # data = ['raro']
 # data = ['kalolibaldor']
 
-# data = open('data/words.txt').read().splitlines()
+data = open('data/words.txt').read().splitlines()
 # data = open('data/hunger.txt').read().splitlines()
 # data = [' '.join(open('data/hunger.txt').read().splitlines())[:10_000]]
 
-num_words = len(data)
+num_words = 100
 num_epochs = 200
 data = data[:num_words]
 
 
-trainer = Trainer(D=128, K=15, S=10, T=8, L=1)
+trainer = Trainer(D=128, K=8, S=10, T=8, L=1)
 
 # trainer.train(data, num_epochs)
-# trainer.save('saved_models/hunger.pth')
+# trainer.save('saved_models/words_100.pth')
 # trainer.inference(data)
 # quit()
 
 
-trainer.load('saved_models/hunger.pth')
-
-word = 'Hi, my name is'
-n=90
-counter = 0
-
-for _ in range(10):
-    res = trainer.remove_noise(word, n=n)
-    print(res)
-    if res == word:
-        counter += 1
-
-print(counter/10)
-
-
+trainer.load('saved_models/words_100.pth')
 # trainer.inference(data)
-# res = trainer.generate('i', num_gen=1)
-# print(res)
+
+
+# word = 'Hi, my name is'
+# n=90
+# counter = 0
+
+# for _ in range(10):
+#     res = trainer.remove_noise(word, n=n)
+#     print(res)
+#     if res == word:
+#         counter += 1
+
+# print(counter/10)
+
+starting = 't'
+data_filtered = set([word for word in data if word.startswith(starting)])
+res = trainer.generate(starting, num_gen=1000)
+
+print(len(data_filtered.intersection(res))/len(data_filtered))
+print(res)
+print(data_filtered)
 
 
 

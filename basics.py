@@ -224,14 +224,14 @@ class Connections:
 
         # adjust edges
         self.edge_attr[good_edges_ix] += 0.1
-        self.edge_attr[bad_edges_ix] -= 0.005
+        self.edge_attr[bad_edges_ix] -= 0.0
 
         # self.edge_attr[good_edges_ix] += (1.0 * self.learning_rate)/len(good_edges_ix)
         # self.edge_attr[bad_edges_ix] -= (1.0 * self.learning_rate)/len(bad_edges_ix)
 
 
         # decay
-        self.edge_attr *= self.connections_decay
+        self.edge_attr -= self.connections_decay
 
         # clamp
         self.edge_attr[good_edges_ix] = torch.clamp_max(self.edge_attr[good_edges_ix], max=1.0)
@@ -347,15 +347,24 @@ class Attractors2:
     def adjust_edges(self, edges, mod):
         edges_ix = find_a_in_b(edges, self.edge_index)
         if len(edges_ix) == 0: return
-        mod = (mod / len(edges_ix))# * (self.dim**2/10000)
-        self.edge_attr[edges_ix] =  torch.clamp( self.edge_attr[edges_ix] + mod, min=-1.0, max=1.0)
+        # mod = (mod / len(edges_ix))# * (self.dim**2/10000)
+        # self.edge_attr[edges_ix] =  torch.clamp( self.edge_attr[edges_ix] + mod, min=-1.0, max=1.0)
+
+        self.edge_attr[edges_ix] =  self.edge_attr[edges_ix] + mod
 
     def process(self, single, union):
         edges_strengthen = single.val[erdos_renyi_graph(len(single), edge_prob=1.0, directed=True)]
-        edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
+        # edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
 
-        self.adjust_edges(edges_strengthen, 1.0 * self.learning_rate)
-        self.adjust_edges(edges_weaken, -1.0 * self.learning_rate)
+        self.adjust_edges(edges_strengthen, 0.1 * self.learning_rate)
+        # self.adjust_edges(edges_weaken, -0.005 * self.learning_rate)
+        # self.adjust_edges(edges_weaken, -1.0 * self.learning_rate)
+
+        # decay
+        self.edge_attr -= self.connections_decay
+
+
+        self.edge_attr = torch.clamp(self.edge_attr, -1.0, 1.0)
 
     def save(self, path=None):
         to_save = {}

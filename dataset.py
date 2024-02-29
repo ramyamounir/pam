@@ -5,7 +5,8 @@ from basics import SDR
 
 class TextDataset():
     def __init__(self, dim=512, S=10):
-        self.letters = string.printable
+        # self.letters = string.printable
+        self.letters = string.ascii_lowercase
         self.letter2id = {l:i for i,l in enumerate(self.letters)}
         self.id2letter = {i:l for i,l in enumerate(self.letters)}
 
@@ -14,7 +15,7 @@ class TextDataset():
 
 
     def encode(self, letter):
-        return self.sdrs[self.letter2id[letter]]
+        return self.sdrs[self.letter2id[letter.lower()]]
 
     def decode(self, sdr, overlap=8):
         overlaps = torch.tensor([sdr.overlap(s) for s in self.sdrs])

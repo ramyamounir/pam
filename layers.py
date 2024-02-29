@@ -71,7 +71,7 @@ class Layer4():
 
 
     def generate(self, prediction, it=100):
-        gen = prediction.choose(self.sparsity)
+        gen = prediction.choose(int(self.sparsity/2))
         for _ in range(it):
             gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
         return gen
@@ -103,11 +103,11 @@ class Layer4():
         # train generative
         reduced_pred = SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)
         if train: self.attractors.process(input_sdr, reduced_pred)
-        pred_gen = self.generate_from(reduced_pred, input_sdr.add_noise(n=0))
-        if pred_gen.overlap(input_sdr) < 8:
-            self.predict_start(input_sdr_expanded)
-            generated = None if gen==False else self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-            return self.create_output(self.prediction, generated, True)
+        # pred_gen = self.generate_from(reduced_pred, input_sdr.add_noise(n=5))
+        # if pred_gen.overlap(input_sdr) < 8:
+        #     self.predict_start(input_sdr_expanded)
+        #     generated = None if gen==False else self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+        #     return self.create_output(self.prediction, generated, True)
 
 
         self.prediction = self.connections(processed_input)
