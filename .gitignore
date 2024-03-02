@@ -2,3 +2,5 @@ __pycache__
 saved_models/
 data/
 logs/
+comparisons/data/
+comparisons/logs/
