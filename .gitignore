@@ -1,6 +1,7 @@
-__pycache__
+__pycache__/
+*.pyc
 saved_models/
 data/
 logs/
-comparisons/data/
-comparisons/logs/
+results/
+experiments/base/data
