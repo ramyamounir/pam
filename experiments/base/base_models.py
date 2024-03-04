@@ -22,7 +22,7 @@ class TransformerSequenceMemory(nn.Module):
 
         x = x.unsqueeze(0)
         res = self.encoder(x+self.pos_enc(torch.arange(x.shape[1])).unsqueeze(0))[:,-1,:]
-        return self.lin(res)
+        return F.sigmoid(self.lin(res))
 
 
 class LSTMSequenceMemory(nn.Module):
@@ -41,29 +41,22 @@ class LSTMSequenceMemory(nn.Module):
         # output [1,D]
 
         _, (hn, _) = self.lstm(x, (self.h0,self.c0))
-        return self.lin(hn)
+        return F.sigmoid(self.lin(hn))
 
 
 class SequenceMemory(nn.Module):
-    def __init__(self, memory='transformer', dim=512, num_layers=2, pred_threshold=0.1, train_every=1):
+    def __init__(self, memory, pred_threshold=0.1, train_every=1):
         super().__init__()
 
-        self.dim = dim
-        self.num_layers = num_layers
+        self.memory = memory
         self.pred_threshold = pred_threshold
         self.train_every = train_every
+        self.optim = torch.optim.Adam(self.memory.parameters(), lr=1e-2)
 
-        if memory=='transformer':
-            self.memory = TransformerSequenceMemory(dim, num_layers)
-        elif memory=='lstm':
-            self.memory = LSTMSequenceMemory(dim, num_layers)
-
-        self.optim = torch.optim.Adam(self.parameters(), lr=1e-2)
-
-        self.clear()
+        self.reset()
         self.train_counter = 0
 
-    def clear(self):
+    def reset(self):
         self.prediction = None
         self.inputs = []
 

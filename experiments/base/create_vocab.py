@@ -50,12 +50,15 @@ class Vocab():
         return v
 
     def __getitem__(self, ix):
-        if isinstance(ix, slice):
-            ix = list(range(ix.stop)[ix])
+
+        # if isinstance(ix, slice):
+        #     ix = torch.tensor(list(range(ix.stop)[ix]))
+        # elif isinstance(ix, torch.Tensor) and ix.shape == torch.Size([]):
+        #     ix = ix.unsqueeze(0)
 
         if self.kind == 'sparse':
-            return torch.stack([self.voc[i].bin for i in ix]).float()
-            # return self.voc[ix]
+            # return torch.stack([self.voc[i].bin for i in ix]).float()
+            return self.voc[ix]
         elif self.kind == 'dense':
             return self.voc(ix)
         else:
