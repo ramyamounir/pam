@@ -49,6 +49,9 @@ class Vocab():
 
         return v
 
+    def getsdrs(self, ix):
+        return [self.voc[i] for i in ix]
+
     def __getitem__(self, ix):
 
         # if isinstance(ix, slice):

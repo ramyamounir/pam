@@ -45,12 +45,11 @@ class LSTMSequenceMemory(nn.Module):
 
 
 class SequenceMemory(nn.Module):
-    def __init__(self, memory, pred_threshold=0.1, train_every=1):
+    def __init__(self, memory, pred_threshold=0.1):
         super().__init__()
 
         self.memory = memory
         self.pred_threshold = pred_threshold
-        self.train_every = train_every
         self.optim = torch.optim.Adam(self.memory.parameters(), lr=1e-2)
 
         self.reset()
@@ -65,13 +64,9 @@ class SequenceMemory(nn.Module):
         return self.memory(inputs)
 
     def optimize(self, loss):
-        self.train_counter += 1
-        (loss/self.train_every).backward()
-
-        if self.train_counter > self.train_every:
-            self.optim.step()
-            self.optim.zero_grad()
-            self.train_counter = 0
+        self.optim.zero_grad()
+        loss.backward()
+        self.optim.step()
 
     def forward(self, x):
 
@@ -81,9 +76,7 @@ class SequenceMemory(nn.Module):
             return self.prediction, False, None
 
         loss = F.mse_loss(self.prediction, x)
-
-        if loss > self.pred_threshold/2:
-            self.optimize(loss)
+        self.optimize(loss)
 
         if loss<self.pred_threshold:
             self.inputs.append(x)

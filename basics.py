@@ -224,11 +224,7 @@ class Connections:
 
         # adjust edges
         self.edge_attr[good_edges_ix] += 0.1
-        self.edge_attr[bad_edges_ix] -= 0.0
-
-        # self.edge_attr[good_edges_ix] += (1.0 * self.learning_rate)/len(good_edges_ix)
-        # self.edge_attr[bad_edges_ix] -= (1.0 * self.learning_rate)/len(bad_edges_ix)
-
+        self.edge_attr[bad_edges_ix] -= 0.01
 
         # decay
         self.edge_attr -= self.connections_decay

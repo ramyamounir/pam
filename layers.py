@@ -58,20 +58,17 @@ class Layer4():
         result = torch.logical_and(feature_bin, for_training_encoder)
         return SDR.from_bin(result.reshape(-1)), boundary
 
-
     def process_input(self, feature, prediction_out):
         prediction_sdr = SDR.from_nodes_threshold(prediction_out, threshold=0.5)
         return self.calculate_to_train(feature, prediction_out, prediction_sdr)
-
 
     def generate_from(self, prediction, gen, it=100):
         for _ in range(it):
             gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
         return gen
 
-
     def generate(self, prediction, it=100):
-        gen = prediction.choose(int(self.sparsity/2))
+        gen = prediction.choose(int(self.sparsity))
         for _ in range(it):
             gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
         return gen

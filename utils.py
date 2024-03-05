@@ -1,6 +1,12 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import os, shutil
+
+def checkdir(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
 
 def find_a_in_b(a, b, inv=False):
     condition = (a[0][:, None] == b[0].view(1, -1)) & (a[1][:, None] == b[1].view(1, -1))
