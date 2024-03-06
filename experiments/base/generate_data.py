@@ -46,6 +46,16 @@ class Generator():
             for val_ix, val in enumerate(seq):
                 yield self.vocab[val], val_ix==len(seq)-1
 
+    def get_stream_full(self, shuffle=True):
+        data = self.seqs[self.current_dataset]
+        ixs = torch.arange(1,data.shape[0]*data.shape[1])
+        if shuffle: ixs = ixs[torch.randperm(len(ixs))]
+
+        for ix in ixs:
+            seq_id = ix%data.shape[0]
+            point_id = ix//data.shape[0]+1
+            yield self.vocab.getsdrs(data[seq_id][:point_id])
+
     def __repr__(self):
         return f"Generator of {self.num_datasets} datasets, with {self.num_seq} sequences and {self.len_seq} length each"
 

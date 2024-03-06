@@ -7,7 +7,7 @@ from basics import SDR
 
 
 class Vocab():
-    def __init__(self, kind, dim, size, sparsity=0.02):
+    def __init__(self, kind, dim, size, sparsity=10):
         self.kind = kind
         self.dim = dim
         self.size = size
@@ -17,7 +17,7 @@ class Vocab():
 
     def create(self):
         if self.kind=='sparse':
-            self.voc = [SDR(self.dim, int(self.dim*self.sparsity)) for _ in range(self.size)]
+            self.voc = [SDR(self.dim, self.sparsity) for _ in range(self.size)]
         elif self.kind =='dense':
             self.voc = nn.Embedding(self.size, self.dim)
         else:
@@ -80,7 +80,7 @@ class Vocab():
 
 if __name__ == "__main__":
 
-    v = Vocab(kind='sparse', dim=128, size=1000, sparsity=0.1)
+    v = Vocab(kind='sparse', dim=128, size=1000, sparsity=10)
     v.create()
     v.save('saved/sparse_100_128_10.pth')
 

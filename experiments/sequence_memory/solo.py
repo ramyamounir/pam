@@ -5,29 +5,40 @@ import os
 
 import sys; sys.path.append('./')
 from basics import SDR
-from layers import Layer4
+from layers import Layer4, Layer4Continual
 from experiments.base.generate_data import Generator
 from utils import checkdir
 
+from dask import delayed as dd
+from dask import compute as dc
+
 class Runner():
-    def __init__(self, seq_file, N, S, K, epochs, test_type, save_every=10):
+    def __init__(self, 
+                 seq_file, 
+                 K, 
+                 test_type,
+                 conn_den=0.5,
+                 conn_dec=0.0,
+                 lr=1.0
+                 ):
         self.seq_file = seq_file
-        self.N = N
-        self.S = S
         self.K = K
-        self.epochs = epochs
         self.test_type = test_type
-        self.save_every = save_every
+        self.conn_den = conn_den
+        self.conn_dec = conn_dec
+        self.lr = lr
 
         self.gen = Generator.load_from(seq_file)
+        self.N = self.gen.vocab.dim
+        self.S = self.gen.vocab.sparsity
+
         self.results = {}
 
     def create_model(self):
-        return Layer4(self.N, self.K, self.S, 0.5, 1e-4, 1.0)
+        return Layer4Continual(self.N, self.K, self.S, self.conn_den, self.conn_dec, self.lr)
 
-    def store(self, dataset_ix, epoch):
-        tag = f'{str(dataset_ix).zfill(2)},{str(epoch).zfill(len(str(self.epochs)))}'
-        self.results[tag] = self.test()
+    def store(self, dataset_ix):
+        self.results[f'{str(dataset_ix).zfill(2)}'] = self.test()
 
     def test(self):
 
@@ -39,19 +50,15 @@ class Runner():
                 if ix > 0: sdr = res['predicted']
                 res = self.model(sdr, train=False, gen=True)
                 results.append(res['predicted'].save())
-                if torch.numel(res['predicted'].ix) == 0:break
-                print(res['predicted']) 
         elif self.test_type == 'AG':
             for ix, (sdr, b) in enumerate(self.gen):
                 if ix > 0: sdr = res['generated']
                 res = self.model(sdr, train=False, gen=True)
                 results.append(res['generated'].save())
-                print(res['generated']) 
         elif self.test_type == 'NA':
             for ix, (sdr, b) in enumerate(self.gen):
                 res = self.model(sdr, train=False, gen=True)
                 results.append(res['predicted'].save())
-                print(res['predicted'])
         else:
             raise NotImplementedError("Kind not implemented")
 
@@ -63,39 +70,64 @@ class Runner():
             self.gen.set_dataset(dataset_ix)
             self.model = self.create_model()
 
-            for e in tqdm(range(self.epochs)):
+            for sdr, b in self.gen:
+                res = self.model(sdr, train=True, gen=True)
 
-                for sdr, b in self.gen:
-                    res = self.model(sdr, train=True, gen=True)
-                    if res['boundary']:
-                        break
-
-                if e%self.save_every==0: 
-                    self.store(dataset_ix, e)
-
-                self.model.reset()
+            self.model.reset()
+            self.store(dataset_ix)
 
         return self.results
 
 
-def run_experiments(K_range=[8,12,16], test_types=['AP', 'AG', 'NA'], epochs=100):
+def run_experiment(args, exp_id):
 
-    save_base_dir = 'results/sequence_memory/solo'
-    for seq_file in sorted(glob('results/sequence_memory/gt/seq_*.pth')):
-        print(f'working on {seq_file} . . .')
-        result_path = os.path.join(save_base_dir, os.path.splitext(os.path.basename(seq_file))[0])
+    exp_id = str(exp_id).zfill(3)
+    print(f'started experiment {exp_id} . . .')
+    save_dir = os.path.join(save_base_dir, exp_id)
+    checkdir(save_dir)
 
-        for K in K_range:
-            result_path = os.path.join(result_path, f'K_{K}')
-            checkdir(result_path)
+    runner = Runner(args['seq_file'], 
+                        args['K'], 
+                        args['test_type'],
+                        args['conn_den'],
+                        args['conn_dec'],
+                        args['lr'],
+                        )
 
-            for test_type in test_types:
-                filename = f'{test_type}.pth'
-                results = Runner(seq_file, 128, 12, K, epochs, test_type, 10).run()
-                torch.save(results, os.path.join(result_path, filename))
+    results = runner.run()
+
+    args.update(
+            dict(vocab_path=runner.gen.vocab_path,
+                 vocab_len=runner.gen.vocab_len, 
+                 len_seq=runner.gen.len_seq, 
+                 num_seq=runner.gen.num_seq, 
+                 num_datasets=runner.gen.num_datasets)
+            )
+
+    to_save = dict(args=args, vals=results)
+    torch.save(to_save, os.path.join(save_dir, 'result.pth'))
+    print(f'finished experiment {exp_id} . . .')
 
 
 
+save_base_dir = 'results/sequence_memory/solo'
+checkdir(save_base_dir)
+args = dict(conn_den=0.5, conn_dec=0.0, lr=1.0)
 
+K_range = [8,16,24,32]
+test_types = ['AP', 'NA']
+seq_files = sorted(glob('results/sequence_memory/gt/seq_*.pth'))
 
+# K_range = [8,24]
+# test_types = ['AP', 'NA']
+# seq_files = sorted(glob('results/sequence_memory/gt/seq_*.pth'))[:3]
+
+fns = []
+for K in K_range:
+    for test_type in test_types:
+        for seq_file in seq_files:
+            args.update(dict(K=K, test_type=test_type, seq_file=seq_file))
+            fns.append(dd(run_experiment)(args, len(fns)))
+
+dc(*fns)
 

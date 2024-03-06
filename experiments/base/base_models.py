@@ -45,6 +45,45 @@ class LSTMSequenceMemory(nn.Module):
 
 
 class SequenceMemory(nn.Module):
+    def __init__(self, memory, pred_threshold=0.1, lr=1e-2):
+        super().__init__()
+
+        self.memory = memory
+        self.pred_threshold = pred_threshold
+        self.lr = lr
+        self.optim = torch.optim.Adam(self.memory.parameters(), lr=self.lr)
+
+        self.reset()
+        self.train_counter = 0
+
+    def reset(self):
+        self.prediction = None
+        self.inputs = []
+
+    def predict(self, x):
+        inputs = torch.cat(self.inputs, dim=0)
+        return self.memory(inputs)
+
+    def optimize(self, loss):
+        (loss/100).backward()
+
+        if self.train_counter>100:
+            self.optim.step()
+            self.optim.zero_grad()
+            self.train_counter = 0
+
+    def forward(self, x):
+        self.train_counter += 1
+
+        self.prediction = self.memory(x[:-1])
+        loss = F.mse_loss(self.prediction, x[-1:])
+        self.optimize(loss)
+
+        return self.prediction, loss
+
+
+
+class SequenceMemoryStreaming(nn.Module):
     def __init__(self, memory, pred_threshold=0.1):
         super().__init__()
 
@@ -70,23 +109,16 @@ class SequenceMemory(nn.Module):
 
     def forward(self, x):
 
-        if self.prediction == None:
-            self.inputs = [x]
-            self.prediction = self.predict(self.inputs)
-            return self.prediction, False, None
+        counter = 0
+        while True and train and counter<100:
+            self.prediction = self.memory(x[:-1])
+            loss = F.mse_loss(self.prediction, x[-1:])
+            self.optimize(loss)
+            counter += 1
+            if loss < self.pred_threshold: break
 
-        loss = F.mse_loss(self.prediction, x)
-        self.optimize(loss)
 
-        if loss<self.pred_threshold:
-            self.inputs.append(x)
-            boundary=False
-        else:
-            self.inputs = [x]
-            boundary=True
-
-        self.prediction = self.predict(self.inputs)
-        return self.prediction, boundary, loss
+        return self.prediction
 
 
 

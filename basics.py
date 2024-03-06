@@ -224,7 +224,7 @@ class Connections:
 
         # adjust edges
         self.edge_attr[good_edges_ix] += 0.1
-        self.edge_attr[bad_edges_ix] -= 0.01
+        # self.edge_attr[bad_edges_ix] -= 0.01
 
         # decay
         self.edge_attr -= self.connections_decay
