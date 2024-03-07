@@ -3,10 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os, shutil
 
-def checkdir(path):
+def checkdir(path, careful=False):
     if os.path.exists(path):
+        if careful: return False
         shutil.rmtree(path)
     os.makedirs(path)
+    return True
 
 def find_a_in_b(a, b, inv=False):
     condition = (a[0][:, None] == b[0].view(1, -1)) & (a[1][:, None] == b[1].view(1, -1))

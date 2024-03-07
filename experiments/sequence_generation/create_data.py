@@ -5,7 +5,7 @@ from utils import checkdir
 import os
 
 # create directory
-vocab_dir = 'results/sequence_memory/gt/voc_001'
+vocab_dir = 'results/sequence_generation/gt/voc_001'
 assert checkdir(vocab_dir, careful=True), f'path {vocab_dir} exists'
 
 # create vocab
@@ -14,11 +14,11 @@ v.create()
 v.save(os.path.join(vocab_dir, 'sparse_1000_256_10.pth'))
 
 # create sequence
-l_range = [10, 50, 100, 500, 1000]
-for l in l_range:
-    g = Generator(vocab_path=os.path.join(vocab_dir, 'sparse_1000_256_10.pth'), vocab_len=20, len_seq=l, num_seq=1, num_datasets=3)
+n_range = [10,50,100]
+for n in n_range:
+    g = Generator(vocab_path=os.path.join(vocab_dir, 'sparse_1000_256_10.pth'), vocab_len=20, len_seq=5, num_seq=n, num_datasets=3)
     g.create()
-    g.save(os.path.join(vocab_dir, f'seq_{str(l).zfill(len(str(l_range[-1])))}.pth'))
+    g.save(os.path.join(vocab_dir, f'seq_{str(n).zfill(len(str(n_range[-1])))}.pth'))
 
 
 

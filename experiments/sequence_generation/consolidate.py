@@ -8,38 +8,50 @@ from tqdm import tqdm
 
 
 def decode_seqs(vocab, seqs_ix):
-    decoded = {}
+    decoded = {i:{} for i in range(seqs_ix.shape[0])}
     for dataset_ix in range(seqs_ix.shape[0]):
-        decoded[dataset_ix] = vocab.getsdrs(seqs_ix[dataset_ix][0])
+        for seq_ix in range(seqs_ix[dataset_ix].shape[0]):
+            decoded[dataset_ix][seq_ix] = vocab.getsdrs(seqs_ix[dataset_ix][seq_ix])
     return decoded
 
 
 def calc_iou_pairs(pred_sdrs, gt_sdrs):
 
     def iou(a, b):
-        sdr_a = SDR(N=256,S=10)
-        sdr_a.load(a)
+        if not isinstance(a, SDR):
+            sdr_a = SDR(N=256,S=10)
+            sdr_a.load(a)
+        else: sdr_a = a
         return len(sdr_a.intersect(b)) / len(sdr_a+b)
 
     return torch.mean(torch.tensor([iou(pred_sdr, gt_sdr) for pred_sdr, gt_sdr in zip(pred_sdrs, gt_sdrs)]))
 
 def compare(gt_seqs, pred_seqs):
+
     num_datasets = len(gt_seqs)
-    num_steps = int(len(pred_seqs)/num_datasets)
-    save_every = 10
 
-    result = []
+    result = {}
     for dataset_ix in range(num_datasets):
-        steps_list = []
-        for step in range(0,num_steps*save_every,save_every):
-            tag = f'{str(dataset_ix).zfill(2)}'
-            gt_sdrs = gt_seqs[dataset_ix]
-            pred_sdrs = pred_seqs[tag]
-            avg_iou = calc_iou_pairs(pred_sdrs[:-1], gt_sdrs[1:])
-            steps_list.append(avg_iou.item())
-        result.append(torch.tensor(steps_list))
 
-    return torch.stack(result)
+        gt_set = gt_seqs[dataset_ix]
+        pred_set = pred_seqs[f'{str(dataset_ix).zfill(2)}']
+
+        comparison = []
+        for pred in pred_set:
+            ious = []
+            for gt in gt_set.values():
+                ious.append(calc_iou_pairs(pred, gt))
+            
+            argmax = torch.argmax(torch.tensor(ious)).item()
+            max_iou = ious[argmax].item()
+            comparison.append([max_iou, argmax])
+
+        result[dataset_ix] = comparison
+
+    print(result)
+    quit()
+
+    return result
 
 
 def get_results(result_file):
@@ -57,7 +69,7 @@ def get_results(result_file):
 
 model = 'solo'
 run = 'run_001'
-results_folder = f'results/sequence_memory/{model}/{run}'
+results_folder = f'results/sequence_generation/{model}/{run}'
 results_files = sorted(glob(f'{results_folder}/*/*.pth'))
 
 consolidated_results = {}
