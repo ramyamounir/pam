@@ -82,8 +82,8 @@ class Runner():
 
             # for e in tqdm(range(self.epochs)):
             for e in range(self.epochs):
-                # for sdr_ix, (sdr, b) in tqdm(enumerate(self.gen), total=self.gen.seqs.shape[-1]*self.gen.seqs.shape[-2]):
-                for sdr_ix, (sdr, b) in enumerate(self.gen):
+                for sdr_ix, (sdr, b) in tqdm(enumerate(self.gen), total=self.gen.seqs.shape[-1]*self.gen.seqs.shape[-2]):
+                # for sdr_ix, (sdr, b) in enumerate(self.gen):
                     res = self.model(sdr, train=True)
                     if b: self.model.reset()
 
@@ -136,7 +136,7 @@ assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
 
 K_range = [8]
-seq_files = sorted(glob('results/sequence_generation/gt/voc_001/seq_*.pth'))[0:1]
+seq_files = sorted(glob('results/sequence_generation/gt/voc_001/seq_*.pth'))[1:2]
 stream_range = torch.linspace(0.0, 1.0, 5)[-1:]
 args = dict(conn_den=0.5, conn_dec=0.0, lr=1.0, cap=100, num_gen=10)
 

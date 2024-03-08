@@ -52,8 +52,8 @@ class Generator():
         if shuffle: ixs = ixs[torch.randperm(len(ixs))]
 
         for ix in ixs:
-            seq_id = ix%data.shape[0]
-            point_id = ix//data.shape[0]+1
+            seq_id = ix//data.shape[0]
+            point_id = ix%data.shape[0]+1
             yield self.vocab.getsdrs(data[seq_id][:point_id])
 
     def __repr__(self):

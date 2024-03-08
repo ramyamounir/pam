@@ -347,15 +347,14 @@ class Layer4ContinualGen():
         processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
 
 
-
         # train prediction
         counter = 0
-        while boundary and train and counter<=self.persistance:
+        while train and counter<=self.persistance:
             self.connections.train(self.prev_sdr, processed_input)
             prediction = self.connections(self.prev_sdr)
             pred_sdr = SDR.from_nodes_threshold(prediction, threshold=0.5)
             overlap = pred_sdr.overlap(processed_input)
-            boundary = overlap < self.sparsity
+            if overlap >= self.sparsity: break
             counter += 1
 
         # train generative

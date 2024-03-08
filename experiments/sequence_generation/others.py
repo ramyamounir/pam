@@ -18,7 +18,7 @@ class Runner():
     def __init__(self, 
                  seq_file, 
                  L, 
-                 test_type,
+                 num_gen,
                  cap,
                  stream,
                  model_type,
@@ -26,7 +26,7 @@ class Runner():
                  ):
         self.seq_file = seq_file
         self.L = L
-        self.test_type = test_type
+        self.num_gen = num_gen
         self.cap = cap
         self.stream = stream
         self.model_type = model_type
@@ -39,7 +39,6 @@ class Runner():
         self.shuffle = False
         self.epochs = max(int(cap*(1.0-stream)),1)
         self.persistance = max(int(cap*stream),1)
-
 
 
         self.results = {}
@@ -110,7 +109,7 @@ def run_experiment(args, exp_id):
 
     runner = Runner(args['seq_file'], 
                     args['L'], 
-                    args['test_type'],
+                    args['num_gen'],
                     args['cap'],
                     args['stream'],
                     args['model_type'],
@@ -134,26 +133,31 @@ def run_experiment(args, exp_id):
 
 
 
-save_base_dir = 'results/sequence_memory/lstm/run_001'
-assert checkdir(save_base_dir, careful=True), f'path {save_base_dir} exists'
+save_base_dir = 'results/sequence_generation/others/run_001'
+assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
 
-test_types = ['AP', 'NA']
-model_types = ['GRU', 'Transformer', 'LSTM']
-L_range = dict(GRU=[1,2], LSTM=[1,2], Transformer=[3,6])
-stream_range = torch.linspace(0.0, 1.0, 5)
-seq_files = sorted(glob('results/sequence_memory/gt/voc_001/seq_*.pth'))
-args = dict(lr=1e-3, cap=100)
+# test_types = ['AP']
+# model_types = ['GRU', 'Transformer', 'LSTM']
+# L_range = dict(GRU=[1,2], LSTM=[1,2], Transformer=[3,6])
+# stream_range = torch.linspace(0.0, 1.0, 5)
+# seq_files = sorted(glob('results/sequence_generation/gt/voc_001/seq_*.pth'))
+# args = dict(lr=1e-3, cap=100)
 
+
+model_types = ['GRU']
+L_range = dict(GRU=[1], LSTM=[1,2], Transformer=[3,6])
+stream_range = [0.0]
+seq_files = sorted(glob('results/sequence_generation/gt/voc_001/seq_*.pth'))[0:1]
+args = dict(lr=1e-3, cap=100, num_gen=10)
 
 fns = []
 for model_type in model_types:
     for L in L_range[model_type]:
-        for test_type in test_types:
-            for seq_file in seq_files:
-                for stream in stream_range:
-                    args.update(dict(L=L, model_type=model_type, test_type=test_type, seq_file=seq_file, stream=stream))
-                    fns.append(dd(run_experiment)(args, len(fns)))
+        for seq_file in seq_files:
+            for stream in stream_range:
+                args.update(dict(L=L, model_type=model_type, seq_file=seq_file, stream=stream))
+                fns.append(dd(run_experiment)(args, len(fns)))
 
 
 dc(*fns)

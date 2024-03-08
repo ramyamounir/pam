@@ -55,7 +55,7 @@ def get_results(result_file):
     return results_loaded['args'], compare(gt_seqs, pred_seqs)
 
 
-model = 'solo'
+model = 'lstm'
 run = 'run_001'
 results_folder = f'results/sequence_memory/{model}/{run}'
 results_files = sorted(glob(f'{results_folder}/*/*.pth'))
@@ -66,7 +66,8 @@ for result_file in tqdm(results_files):
     consolidated_results[result_file] = [args, result]
 
 # for k, v in consolidated_results.items():
-#     print(f'Test: {v[0]["test_type"]}, Seq_len: {v[0]["len_seq"]}, K: {v[0]["K"]} ', v[1])
+#     print(f'Model: {v[0]["model_type"]}, Stream: {v[0]["stream"]}, Test: {v[0]["test_type"]}, Seq_len: {v[0]["len_seq"]}, L: {v[0]["L"]} ', v[1])
+# quit()
 
 torch.save(consolidated_results, os.path.join(results_folder, 'consolidated_results.pth'))
 
