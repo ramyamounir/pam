@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tbw import TBWrapper, TBType
+from basics import SDR
 
 
 class TransformerSequenceMemory(nn.Module):
@@ -12,14 +13,15 @@ class TransformerSequenceMemory(nn.Module):
         self.num_layers = num_layers
 
         self.pos_enc = nn.Embedding(self.max_seq_len, self.dim, _freeze=True)
+        # self.pos_enc = [SDR(N=self.dim, S=20) for _ in range(self.max_seq_len)]
+
         encoder_layer = nn.TransformerEncoderLayer(self.dim, 8, batch_first=batch_first)
         self.encoder = nn.TransformerEncoder(encoder_layer, self.num_layers)
         self.lin = nn.Linear(self.dim, self.dim)
 
     def create_mask(self, input_tensor):
         batch_size, seq_len, _ = input_tensor.size()
-        mask = torch.ones(batch_size, seq_len, dtype=torch.bool)
-        mask[:, -1] = 0  # Set the last element of each sequence to 0
+        mask = torch.tril(torch.ones((seq_len, seq_len)), diagonal=-1).bool()
         return mask
 
     def forward(self, x):
@@ -28,8 +30,12 @@ class TransformerSequenceMemory(nn.Module):
 
         x = x.unsqueeze(0)
         mask = self.create_mask(x)
+
+        # pos = torch.stack([self.pos_enc[p].bin.float() for p in range(x.shape[1])]).unsqueeze(0)
+        # x_pos = x + pos
+
         x_pos = x+self.pos_enc(torch.arange(x.shape[1])).unsqueeze(0)
-        res = self.encoder(x_pos, src_key_padding_mask=mask)
+        res = self.encoder(x_pos, mask=mask)
 
         return F.sigmoid(self.lin(res[:,-1,:]))
 
@@ -43,16 +49,37 @@ class GRUSequenceMemory(nn.Module):
 
         self.gru = nn.GRU(input_size=self.dim, hidden_size=self.dim, num_layers=self.num_layers)
         self.lin = nn.Linear(self.dim, self.dim)
-        self.h0 = torch.randn(self.num_layers, self.dim)
 
     def forward(self, x):
         # input [S,D]
         # output [1,D]
 
-        x = x[:-1]
+        out, h = self.gru(x)
+        return self.lin(out)
+        # return out
 
-        _, hn = self.gru(x, self.h0)
-        return F.sigmoid(self.lin(hn[[-1]]))
+
+class GRUSequenceMemoryCell(nn.Module):
+    def __init__(self, dim, num_layers):
+        super().__init__()
+        self.dim = dim
+        self.num_layers = num_layers
+
+        self.gru = nn.GRUCell(input_size=self.dim, hidden_size=self.dim)
+        self.lin = nn.Linear(self.dim, self.dim)
+        self.h = torch.zeros(1,self.dim)
+
+    def forward(self, x, h=None):
+        # input [S,D]
+        # output [1,D]
+        
+        if h==None:
+            h=self.h
+
+        h = self.gru(x, hx=h)
+        return self.lin(h), h.detach()
+
+
 
 
 class LSTMSequenceMemory(nn.Module):
@@ -63,29 +90,27 @@ class LSTMSequenceMemory(nn.Module):
 
         self.lstm = nn.LSTM(input_size=self.dim, hidden_size=self.dim, num_layers=self.num_layers)
         self.lin = nn.Linear(self.dim, self.dim)
-        self.h0 = torch.randn(self.num_layers, self.dim)
-        self.c0 = torch.randn(self.num_layers, self.dim)
+
+        # self.h0 = torch.zeros(self.num_layers, self.dim)
+        # self.c0 = torch.zeros(self.num_layers, self.dim)
 
     def forward(self, x):
         # input [S,D]
         # output [1,D]
 
-        x = x[:-1]
-
-        _, (hn, _) = self.lstm(x, (self.h0,self.c0))
-        return F.sigmoid(self.lin(hn[[-1]]))
+        out, (hn, _) = self.lstm(x)
+        return self.lin(out)
 
 
 
 class SequenceMemory(nn.Module):
-    def __init__(self, memory, pred_threshold=0.1, persistance=100, accum=100):
+    def __init__(self, memory, lr, pred_threshold=0.1, accum=100):
         super().__init__()
 
         self.memory = memory
         self.pred_threshold = pred_threshold
-        self.persistance = persistance
         self.accum = accum
-        self.optim = torch.optim.Adam(self.memory.parameters(), lr=1e-2)
+        self.optim = torch.optim.Adam(self.memory.parameters(), lr=lr)
 
         self.reset()
         self.train_counter = 0
@@ -109,17 +134,17 @@ class SequenceMemory(nn.Module):
 
     def forward(self, x):
 
-        counter = 0
-        while counter<self.persistance:
+        h = None
+        for x_input, target in zip(x[:-1], x[1:]):
+            x_input, target = x_input.unsqueeze(0), target.unsqueeze(0)
 
-            self.prediction = self.memory(x)
-            loss = F.mse_loss(self.prediction, x[-1:])
-            self.optimize(loss)
+            for _ in range(1):
+                self.prediction, h_out = self.memory(x_input, h)
+                loss = F.mse_loss(self.prediction, target)
+                self.optimize(loss)
+                self.train_counter += 1
 
-            if loss < self.pred_threshold: break
-            counter += 1
-            self.train_counter += 1
-
+            h = h_out
 
         return self.prediction, loss
 

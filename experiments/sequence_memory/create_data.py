@@ -14,7 +14,7 @@ v.create()
 v.save(os.path.join(vocab_dir, 'sparse_1000_256_10.pth'))
 
 # create sequence
-l_range = [10, 50, 100, 500, 1000]
+l_range = [10,20,30,40,50,60,70,80,90,100]
 for l in l_range:
     g = Generator(vocab_path=os.path.join(vocab_dir, 'sparse_1000_256_10.pth'), vocab_len=20, len_seq=l, num_seq=1, num_datasets=3)
     g.create()
