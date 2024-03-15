@@ -1,7 +1,4 @@
 __pycache__/
 *.pyc
-saved_models/
 data/
-logs/
 results/
-experiments/base/data
