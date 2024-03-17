@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+import random
+from random import shuffle
 
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import erdos_renyi_graph, to_undirected
@@ -72,6 +74,23 @@ class SDR():
     @staticmethod
     def from_bin(val):
         return SDR(len(val), ix=torch.argwhere(val==True))
+
+    @staticmethod
+    def from_SDR(sdr, b=0.5, seed=1):
+        """ 
+        Clones SDR with specific correlation factor b
+        b=0 -> No correlation (random SDR)
+        b=1 -> Full correlation (same SDR)
+        """
+
+        ix = sdr.ix
+        same_ix = ix[torch.rand_like(ix.float())<b]
+        available = list(set(range(sdr.N)) - set(same_ix.numpy().tolist()))
+        shuffle(available)
+        changed_ix = torch.tensor(available[:sdr.S-len(same_ix)])
+
+        return SDR(sdr.N, ix = torch.cat([same_ix, changed_ix]).long())
+
 
     def add_noise(self, n=1):
         change_ix = torch.randperm(self.N)[:n]
