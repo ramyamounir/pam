@@ -15,6 +15,7 @@ class PamModel():
                  connections_decay=0.0,
                  learning_rate=1,
                  persistance=1,
+                 generative=False
                  ):
 
         self.num_base_neurons = num_base_neurons
@@ -22,12 +23,14 @@ class PamModel():
         self.sparsity = sparsity
         self.num_neurons = self.num_base_neurons*self.num_neurons_per_minicolumn
         self.persistance = persistance
+        self.generative = generative
 
         self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
-        self.attractors = Attractors(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
+        if self.generative: self.attractors = Attractors(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
         self.start_sdr = self.create_start_sdr()
 
-        self.parameters = ['connections', 'attractors', 'start_sdr']
+        self.parameters = ['connections', 'start_sdr']
+        if hasattr(self, 'attractors'): self.parameters.append('attractors')
         self.reset()
 
     def create_start_sdr(self):
@@ -67,19 +70,23 @@ class PamModel():
 
     def generate_from(self, prediction, gen, it=100):
         for _ in range(it):
-            gen = SDR.from_nodes_topk(self.attractors(gen), k=int(self.sparsity)).intersect(prediction)
+            gen = SDR.from_nodes_topk(self.attractors(gen), k=self.sparsity).intersect(prediction)
+            # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
+
         return gen
 
     def generate(self, prediction, it=100):
         gen = prediction.choose(self.sparsity)
         for _ in range(it):
             gen = SDR.from_nodes_topk(self.attractors(gen), k=self.sparsity).intersect(prediction)
+            # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
         return gen
 
 
     def create_output(self, predicted, generated):
         output = dict(
                 predicted = SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn),
+                # predicted = SDR.from_nodes_topk(self.prediction, k=self.sparsity).reduce(self.num_neurons_per_minicolumn),
                 generated = generated
                 )
         return output
@@ -90,7 +97,8 @@ class PamModel():
 
         if self.prediction == None:
             self.predict_start(input_sdr_expanded)
-            generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            else: generated = self.prediction
             return self.create_output(self.prediction, generated)
 
         processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
@@ -107,15 +115,17 @@ class PamModel():
             counter += 1
 
         # train generative
-        counter = 0
-        while counter<=self.persistance:
-            reduced_pred = pred_sdr.reduce(self.num_neurons_per_minicolumn)
-            self.attractors.process(input_sdr, reduced_pred)
-            counter += 1
+        if self.generative:
+            counter = 0
+            while counter<=self.persistance:
+                reduced_pred = pred_sdr.reduce(self.num_neurons_per_minicolumn)
+                self.attractors.process(input_sdr, reduced_pred)
+                counter += 1
 
         self.prediction = self.connections(processed_input)
         self.prev_sdr = processed_input
-        generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+        if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+        else: generated = self.prediction
 
         return self.create_output(self.prediction, generated)
 
@@ -131,26 +141,71 @@ class PamModel():
 
         if self.prediction == None:
             self.predict_start(input_sdr_expanded)
-            generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            else: generated = self.prediction
             return self.create_output(self.prediction, generated)
 
         processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
 
         self.prediction = self.connections(processed_input)
-        generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+
+        if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+        else: generated = self.prediction
+
         return self.create_output(self.prediction, generated)
 
-    def recall_seq(self, seq, query='online'):
+    def recall_seq(self, seq, query='online', gen=False):
 
         result = []
 
         self.reset()
         for s_ix, s in enumerate(seq):
-            if s_ix >0 and query=='ofline': s = res['predicted']
+            if s_ix >0 and query=='offline': 
+                s = res['predicted'] if gen==False else res['generated']
+
             res = self.infer_single(s)
-            result.append(res['predicted'])
+            result.append(res['predicted'] if gen==False else res['generated'])
 
         return result
+
+    def recall_predictive(self, seq):
+
+        result = []
+        self.reset()
+
+        for s_ix, s in enumerate(seq):
+
+            if self.prediction == None:
+                input_sdr_expanded = s.expand(self.num_neurons_per_minicolumn)
+                self.predict_start(input_sdr_expanded)
+                continue
+
+            processed_input, boundary = self.process_input(s.expand(self.num_neurons_per_minicolumn), self.prediction)
+            result.append(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            self.prediction = self.connections(processed_input)
+
+
+        return result
+
+    def recall_generative(self, seq):
+
+        result = []
+        self.reset()
+
+        for s_ix, s in enumerate(seq):
+
+            if self.prediction == None:
+                input_sdr_expanded = s.expand(self.num_neurons_per_minicolumn)
+                self.predict_start(input_sdr_expanded)
+                continue
+
+            s_clean = self.generate_from(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn), s)
+            processed_input, boundary = self.process_input(s_clean.expand(self.num_neurons_per_minicolumn), self.prediction)
+            result.append(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
+            self.prediction = self.connections(processed_input)
+
+        return result
+
 
     def reset(self):
         self.prediction = None

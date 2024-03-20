@@ -32,25 +32,31 @@ def get_n_errors(gt, rec):
 
 
 class Finder():
-    def __init__(self, start, inc_step=2, th=0.01):
-        self.lower_bound = start
+    def __init__(self, start, step=2, th=0.01):
+        self.start = start
+        self.lower_bound = None
         self.upper_bound = None
         self.pointer = start
-        self.value = 0.0
+        self.value = None
 
-        self.inc_step = inc_step
+        self.step = step
         self.th = th
 
         self.checked = set()
 
     def get_point(self):
+        if self.value == None:
+            self.checked.add(self.pointer.item())
+            return self.start, False
+
+
         if self.value < self.th:
             self.lower_bound = self.pointer
 
             if self.upper_bound != None:
                 self.pointer = (self.pointer + self.upper_bound)//2
             else:
-                self.pointer = self.pointer+ self.inc_step
+                self.pointer = self.pointer+ self.step
 
             final = self.pointer.item() in self.checked
             self.checked.add(self.pointer.item())
@@ -60,13 +66,16 @@ class Finder():
         elif self.value >= self.th:
             self.upper_bound = self.pointer
 
-            self.pointer = (self.lower_bound + self.pointer) // 2
+            if self.lower_bound != None:
+                self.pointer = (self.lower_bound + self.pointer) // 2
+            else:
+                self.pointer = max(self.pointer-self.step,2)
+
 
             final = self.pointer.item() in self.checked
             self.checked.add(self.pointer.item())
 
             return self.pointer, final
-
 
 
 
@@ -77,7 +86,7 @@ def search_Pmax(N, tolerance, model, learn_iters, lr, b, Ss, seeds):
     Pmaxs = []
 
 
-    for s in Ss:
+    for S in Ss:
         print('==========================')
 
         # set an initial value for Pmax so we can detect if the upper bound of P is exceeded
@@ -87,16 +96,16 @@ def search_Pmax(N, tolerance, model, learn_iters, lr, b, Ss, seeds):
 
         while True:
 
-            print(f'Current Model:{model}, Current N:{N}, Current S:{s} Current P:{P}')
+            print(f'Current Model:{model}, Current N:{N}, Current S/N:{S/N} Current P:{P}')
             n_errors = 0
             for seed in tqdm(range(seeds)):
 
                 # generate data, couple seed with k
-                S = int(N*s)
+                # S = int(N*s)
                 X = generate_correlated_SDR_patterns(P, N, b, S, seed=seed)
 
                 if model.startswith('PAM'):
-                    net = PamModel(N, int(model.split('-')[-1]), S, 0.9, 0.0, 1.0, 100)
+                    net = PamModel(N, int(model.split('-')[-1]), S, 0.8, 0.0, 1.0, 100, False)
                     net.train_seq(X)
                     recall = net.recall_seq(X, query='offline')
 
@@ -113,7 +122,7 @@ def search_Pmax(N, tolerance, model, learn_iters, lr, b, Ss, seeds):
                 elif model.startswith('HN'):
                     X_polar = torch.stack([x.bin.float() for x in X])*2.0-1.0
                     net = ModernAsymmetricHopfieldNetwork(N, 'binary', sep=int(model.split('-')[-1]))
-                    recall = net.recall_seq(X_polar, query='online')
+                    recall = net.recall_seq(X_polar, query='offline')
 
                     n_errors += torch.sum(X_polar[1:]!=recall[1:])
 
@@ -139,12 +148,12 @@ def search_Pmax(N, tolerance, model, learn_iters, lr, b, Ss, seeds):
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
-    assert checkdir(save_base_dir, careful=True), f'path {save_base_dir} exists'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_003'
+    assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
     tolerance = 0.01
-    models = ['PAM-8', 'PC', 'HN-1', 'HN-2']
-    Ss = torch.arange(0.1, 0.6, 0.1)
+    models = ['PAM-8', 'PAM-24', 'PC', 'HN-1', 'HN-2']
+    Ss = [5, 10, 15, 20, 25]
 
     results = {}
     for i, model in enumerate(models):
@@ -163,4 +172,8 @@ if __name__ == "__main__":
 
     print(results)
     json.dump(results, open(os.path.join(save_base_dir, 'results.json'), 'w'))
+
+    args = dict(tolerance=tolerance, models = models, N=conf['N'], b=conf['b'], learn_iters=conf['learn_iters'], lr=conf['lr'], Ss=Ss, seeds=conf['seeds'])
+    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, 'results.pth'))
+
 

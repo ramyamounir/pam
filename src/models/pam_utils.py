@@ -76,15 +76,17 @@ class SDR():
         return SDR(len(val), ix=torch.argwhere(val==True))
 
     @staticmethod
-    def from_SDR(sdr, b=0.5, seed=1):
+    def from_SDR(sdr, e=0.5):
         """ 
-        Clones SDR with specific correlation factor b
-        b=0 -> No correlation (random SDR)
-        b=1 -> Full correlation (same SDR)
+        Clones SDR with specific noise factor e
+        e=0 -> No noise (no bits change)
+        e=1 -> Full noise (all active bits change)
         """
 
+        assert 0<= e <= sdr.S, "invalid noise"
+
         ix = sdr.ix
-        same_ix = ix[torch.rand_like(ix.float())<b]
+        same_ix = ix[torch.randperm(len(sdr))[:len(ix)-e]]
         available = list(set(range(sdr.N)) - set(same_ix.numpy().tolist()))
         shuffle(available)
         changed_ix = torch.tensor(available[:sdr.S-len(same_ix)])
@@ -284,7 +286,7 @@ class Attractors:
     def initialize(self):
         fully_connected = torch.cartesian_prod(torch.arange(self.dim), torch.arange(self.dim))
         self.edge_index = fully_connected[torch.randperm(len(fully_connected))[:int(len(fully_connected)*self.connections_density)]].t().contiguous()
-        self.edge_attr = torch.ones((self.edge_index.shape[-1],1))*-1
+        self.edge_attr = torch.ones((self.edge_index.shape[-1],1))* -1.0
         self.parameters = ['edge_index', 'edge_attr']
 
     def __call__(self, x_in_sdr):
@@ -302,11 +304,18 @@ class Attractors:
         # edges_weaken = to_undirected(torch.cartesian_prod(single.val, (union-single).val).t().contiguous())
 
         self.adjust_edges(edges_strengthen, 0.1 * self.learning_rate)
-        # self.adjust_edges(edges_weaken, -0.005 * self.learning_rate)
+        # self.adjust_edges(edges_weaken, -0.05 * self.learning_rate)
         # self.adjust_edges(edges_weaken, -1.0 * self.learning_rate)
 
+        # self.edge_attr[find_a_in_b(edges_strengthen, self.edge_index)] += 0.1 # test
+        # self.edge_attr[find_a_in_b(edges_weaken, self.edge_index)] += -0.01 # test
+
+        # self.edge_attr[find_a_in_b(edges_strengthen, self.edge_index)] = 1.0 # test
+        # self.edge_attr[find_a_in_b(edges_weaken, self.edge_index)] = -1.0 # test
+
+
         # decay
-        self.edge_attr -= self.connections_decay
+        # self.edge_attr -= self.connections_decay
 
 
         self.edge_attr = torch.clamp(self.edge_attr, -1.0, 1.0)

@@ -63,7 +63,7 @@ class SingleLayertPC(nn.Module):
         energy = torch.sum(err**2)
         return energy
 
-    def train_seq(self, seq, verbose=True):
+    def train_seq(self, seq, verbose=False):
         seq_len = seq.shape[0]
         losses = []
         start_time = time.time()
@@ -110,50 +110,6 @@ class SingleLayertPC(nn.Module):
                 recall[k] = torch.sign(self.forward(recall[k-1:k])) if self.data_type == 'binary' else self.forward(recall[k-1:k]) # 1xN
 
         return recall
-
-
-
-class LinearSingleLayertPC(nn.Module):
-    """
-    Linear version of the single layer tPC;
-
-    This is for the convenience of searching Pmax for binary patterns
-
-    Training is performed across the whole sequence,
-    rather than step-by-step i.e., the loss is the sum over
-    all timesteps.
-    """
-    def __init__(self, input_size, learn_iters=100, lr=1e-2):
-        super(LinearSingleLayertPC, self).__init__()
-        self.Wr = nn.Linear(input_size, input_size, bias=False)
-        self.input_size = input_size
-        self.learn_iters = learn_iters
-        self.criterion = nn.MSELoss()
-        self.optimizer = torch.optim.SGD(list(self.Wr.parameters()), lr=lr)
-    
-    def forward(self, s):
-        pred = self.Wr(s)
-        return pred
-    
-    def recall(self, s):
-        pred = self.Wr(s)
-        return pred
-    
-    def get_loss(self, X):
-        """X: shape PxN"""
-        pred = self.forward(X[:-1]) # (P-1)xN
-        loss = self.criterion(pred, X[1:])
-        return loss
-
-    def train(self, X):
-        losses = []
-        for i in range(self.learn_iters):
-            self.optimizer.zero_grad()
-            loss = self.get_loss(X)
-            loss.backward()
-            self.optimizer.step()
-            losses.append(loss.item())
-        return losses
 
 
 
