@@ -10,8 +10,8 @@ from src.models.mcahn import ModernAsymmetricHopfieldNetwork
 from src.models.pam import PamModel
 from src.models.pam_utils import SDR
 from src.experiments.utils import checkdir
-from src.data.cifar import load_sequence_cifar
-from src.data.binary import generate_correlated_SDR_patterns
+from src.datasets.cifar import load_sequence_cifar
+from src.datasets.binary import generate_correlated_SDR_patterns
 
 
 def get_S(x):

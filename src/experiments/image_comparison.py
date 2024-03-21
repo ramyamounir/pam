@@ -8,7 +8,7 @@ from src.models.mcahn import ModernAsymmetricHopfieldNetwork
 from src.models.pam import PamModel
 from src.models.pam_utils import SDR
 from src.experiments.utils import checkdir
-from src.data.cifar import load_sequence_cifar
+from src.datasets.cifar import load_sequence_cifar
 
 
 def single_tpc(save_base_dir):
