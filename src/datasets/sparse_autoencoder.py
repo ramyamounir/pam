@@ -7,7 +7,7 @@ from torch.utils.data import Subset
 
 from tqdm import tqdm
 from tbw import TBWrapper, TBType
-import os
+import os, math
 from collections import deque
 import matplotlib.pyplot as plt
 
@@ -35,7 +35,7 @@ class CNNDecoder(nn.Module):
     def __init__(self, dim, n_channels=3):
         super().__init__()
         self.fc = nn.Linear(dim, 128 * 4 * 4)  # Fully connected layer to upscale the feature vector
-        self.conv_transpose1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)  # Upsampling layer 1 ### 1 for CIFAR
+        self.conv_transpose1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=0)  # Upsampling layer 1 ### 1 for CIFAR
         self.conv_transpose2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)  # Upsampling layer 2
         self.conv_transpose3 = nn.ConvTranspose2d(32, n_channels, kernel_size=3, stride=2, padding=1, output_padding=1)   # Upsampling layer 3
 
@@ -135,13 +135,13 @@ class MNISTae():
 
 
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-        # trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-        trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-        trainset = Subset(trainset, range(1000))
+        trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+        # trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        # trainset = Subset(trainset, range(1000))
         self.trainloader_dense = torch.utils.data.DataLoader(trainset, batch_size=10, shuffle=True, num_workers=1)
 
 
-        self.binAutoEncoder = BinAutoEncoder(dim=512, sparsity=51, n_channels=3, writer=self.writer).cuda()
+        self.binAutoEncoder = BinAutoEncoder(dim=512, sparsity=51, n_channels=1, writer=self.writer).cuda()
 
     def create_writers(self):
         self.writer = TBWrapper(os.path.join(self.save_base_dir, 'logs'))
@@ -157,29 +157,23 @@ class MNISTae():
         self.writer(TBType.IMAGE, 'test/bin_infer_imgs')
 
 
-    def train_bin(self, n_epochs):
+    def train_one_epoch(self, e, n_epochs):
 
         counter = 0
-        for e in range(n_epochs):
-            for imgs, _ in tqdm(self.trainloader_dense):
+        for imgs, _ in tqdm(self.trainloader_dense):
+            imgs = imgs.cuda()
+            bs = torch.clamp(torch.tensor((e+1)/n_epochs), 0.0, 1.0)
+            enc, loss, recon = self.binAutoEncoder(imgs, bin_strength=bs, boost=False)
 
-                imgs = imgs.cuda()
+            # logging
+            self.writer['train/bin_str'](bs)
+            self.writer['train/bin_sum'](enc.sum())
 
-                # warmup_epochs = 20
-                # bs = torch.clamp(1-torch.exp(torch.tensor(-10.0*counter/((warmup_epochs*len(self.trainloader_dense))-1))), 0.0, 1.0)
-                # if e == warmup_epochs-1: bs = 1.0
-
-                bs = torch.clamp(torch.tensor((e+1)/n_epochs), 0.0, 0.9)
-                enc, loss, recon = self.binAutoEncoder(imgs, bin_strength=bs, boost=False)
-
-                # logging
-                self.writer['train/bin_str'](bs)
-                self.writer['train/bin_sum'](enc.sum())
-                if counter%1000==0: 
-                    self.writer['train/bin_imgs'](make_grid([imgs[0], recon[0]], nrow=2))
+            if counter==1000:
+                self.writer['train/bin_imgs'](make_grid([imgs[0], recon[0]], nrow=2))
+                counter = 0
+            else:
                 counter += 1
-
-            self.simple_infer()
 
     def infer_bin(self):
         
@@ -208,22 +202,33 @@ class MNISTae():
             loss += F.mse_loss(imgs, recon)
             counter += 1
 
-        self.writer['test/infer_loss'](loss/counter)
+        loss_final = loss/counter
+        self.writer['test/infer_loss'](loss_final)
+        return loss_final
 
 
     def train(self):
-        self.train_bin(n_epochs=500)
-        self.infer_bin()
-        self.save()
 
-    def save(self):
-        torch.save(self.binAutoEncoder.state_dict(), os.path.join(self.save_base_dir, 'weights.pth'))
-        
+        # train and save
+        prev_inf_loss = math.inf
+        n_epochs = 10
+        for e in range(n_epochs):
+            self.train_one_epoch(e, n_epochs)
+            inf_loss = self.simple_infer()
+
+            if inf_loss < prev_inf_loss:
+                torch.save(self.binAutoEncoder.state_dict(), os.path.join(self.save_base_dir, 'weights.pth'))
+                prev_inf_loss = inf_loss
+
+        # load and test
+        self.binAutoEncoder.load_state_dict(torch.load(os.path.join(self.save_base_dir, 'weights.pth')))
+        inf_loss = self.simple_infer()
+        self.infer_bin()
 
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_003'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_test'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
     ae = MNISTae(save_base_dir)
