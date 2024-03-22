@@ -207,6 +207,29 @@ class PamModel():
         return result
 
 
+    def recall_generative_random(self, start, seq_len):
+        result = [start]
+        self.reset()
+
+        for i in range(seq_len):
+
+            if self.prediction == None:
+                input_sdr_expanded = start.expand(self.num_neurons_per_minicolumn)
+                self.predict_start(input_sdr_expanded)
+                result.append(self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)))
+                continue
+
+
+            processed_input, boundary = self.process_input(result[-1].expand(self.num_neurons_per_minicolumn), self.prediction)
+            self.prediction = self.connections(processed_input)
+            result.append(self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)))
+
+        return result
+
+
+
+
+
     def reset(self):
         self.prediction = None
         self.prev_sdr = None

@@ -90,6 +90,38 @@ class SingleLayertPC(nn.Module):
         return losses
 
 
+    def train_batched_seqs(self, xs, verbose=False):
+
+        losses = []
+        start_time = time.time()
+        for learn_iter in range(self.learn_iters):
+            batch_size, seq_len = xs.shape[:2]
+
+            # initialize the hidden activities
+            prev = self.init_hidden(batch_size)
+
+            batch_loss = 0
+            for k in range(seq_len):
+                x = xs[:, k, :].clone().detach()
+                self.optim.zero_grad()
+                energy = self.get_energy(x, prev)
+                energy.backward()
+                self.optim.step()
+                prev = x.clone().detach()
+
+                # add up the loss value at each time step
+                batch_loss += energy.item() / seq_len
+
+            # add the loss in this batch
+            epoch_loss = batch_loss / batch_size
+            losses.append(epoch_loss)
+            if verbose and (learn_iter + 1) % 10 == 0:
+                print(f'Epoch {learn_iter+1}, loss {epoch_loss}')
+
+        if verbose: print(f'training PC complete, time: {time.time() - start_time}')
+        return losses
+
+
     def recall_seq(self, seq, query, noise=0.0):
         """recall function for pc
         

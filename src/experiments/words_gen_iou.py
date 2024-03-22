@@ -10,7 +10,7 @@ from src.models.mcahn import ModernAsymmetricHopfieldNetwork
 from src.models.pam import PamModel
 from src.models.pam_utils import SDR
 from src.experiments.utils import checkdir
-from src.datasets.protein import ProteinSequence
+from src.datasets.words import WordSequence
 
 def get_ious(gt, rec):
     if isinstance(rec[0], SDR):
@@ -18,21 +18,10 @@ def get_ious(gt, rec):
     else:
         return torch.mean(torch.tensor([torch.sum(torch.logical_and(g,r)).item()/torch.sum(torch.logical_or(g,r)).item() for g,r in zip((gt+1.0)/2.0, (rec+1.0)/2.0)])).item()
 
-def get_n_errors(gt, rec):
-    if isinstance(rec[0], SDR):
-        gts = torch.cat([g.bin.float() for g in gt])
-        recs = torch.cat([r.bin.float() for r in rec])
-        n_errors = torch.sum(gts!=recs)
-        error_prob = n_errors/torch.numel(gts)
-        return error_prob
-    else:
-        return torch.sum(gt!=rec)/torch.numel(gt)
-
-
 def get_model(model, N, specs):
 
     if model.startswith('PAM'):
-        net = PamModel(N, specs['K'], specs['S'], specs['conn_den'], 0.0, 1.0, 100, False)
+        net = PamModel(N, specs['K'], specs['S'], specs['conn_den'], 0.0, 1.0, 100, True)
 
     elif model.startswith('PC'):
 
@@ -46,78 +35,100 @@ def get_model(model, N, specs):
 
     return net
 
-def train_model(seq, net):
+
+def train_model(seqs, net):
 
     if isinstance(net, PamModel):
-        net.train_seq(seq)
+        for i in range(len(seqs)):
+            net.train_seq(seqs[i])
+
     elif isinstance(net, SingleLayertPC):
-        X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-        net.train_seq(X_polar)
+
+        X_polar = []
+        for seq in seqs:
+            X_polar.append(torch.stack([x.bin.float() for x in seq])*2.0-1.0)
+        X_polar = torch.stack(X_polar)
+
+        net.train_batched_seqs(X_polar)
+
     elif isinstance(net, MultilayertPC):
         X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
         net.train_seq(X_polar)
+
     elif isinstance(net, ModernAsymmetricHopfieldNetwork):
         pass
+
     else:
         raise ValueError("model not found")
 
 
-def backward_transfer(seqs, net):
+def gen_words(seqs, net):
+    if isinstance(net, PamModel):
+        return [net.recall_generative_random(seq[0], 3) for seq in seqs]
 
-    metrics = []
-    for seq in seqs:
+    elif isinstance(net, SingleLayertPC):
+        X_polar = []
+        for seq in seqs:
+            X_polar.append(torch.stack([x.bin.float() for x in seq])*2.0-1.0)
+        X_polar = torch.stack(X_polar)
 
-        if isinstance(net, PamModel):
-            recall = net.recall_predictive(seq)
-            # metric = get_n_errors(seq[1:], recall)
-            metric = get_ious(seq[1:], recall)
-        elif isinstance(net, SingleLayertPC):
-            X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-            recall = net.recall_seq(X_polar, 'online')
-            # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+        return [net.recall_seq(seq, query='offline') for seq in X_polar]
 
-        elif isinstance(net, MultilayertPC):
-            X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-            recall = net.recall_seq(X_polar, 'online')
-            # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+def evaluate(net, words, seqs):
 
-        elif isinstance(net, ModernAsymmetricHopfieldNetwork):
-            X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-            recall = net.recall_seq(X_polar, 'online')
-            # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+    if isinstance(net, PamModel):
+        ious = []
+        for word in words:
+            iou = max([get_ious(gt[1:], word[1:]) for gt in seqs])
+            ious.append(iou)
+        return sum(ious)/len(ious)
 
-        metrics.append(metric)
+    elif isinstance(net, SingleLayertPC):
 
-    return metrics
+        X_polar = []
+        for seq in seqs:
+            X_polar.append(torch.stack([x.bin.float() for x in seq])*2.0-1.0)
+        X_polar = torch.stack(X_polar)
+
+        ious = []
+        for word in words:
+            iou = max([get_ious(gt[1:], word[1:]) for gt in X_polar])
+            ious.append(iou)
+        return sum(ious)/len(ious)
 
 
-def compute(N, model, specs, seed=1):
+
+def compute(N, model, num_words_inc, specs, seed=1):
 
     S = 5 if specs['S']==5 else int(N*specs['S']/100)
-    X = ProteinSequence(N, S, seed=seed)
-    net = get_model(model, N, specs)
 
-    backwards = []
-    for Xi_id, Xi in enumerate(X.seqs[:10]):
-        print(f'seq: {Xi_id}')
-        train_model(Xi, net)
-        backward_errors = backward_transfer(X.seqs[:Xi_id+1], net)
-        backwards.append(backward_errors)
+    ious = []
+    for num_words in num_words_inc:
+        X = WordSequence(N, S, num_words=num_words, seed=seed)
+        net = get_model(model, N, specs)
 
-    return backwards
+        train_model(X.seqs, net)
+        generated_words = gen_words(X.seqs, net)
+        ious.append(evaluate(net, generated_words, X.seqs))
+
+    return ious
+
+
+
+
 
 
 
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_test'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    models = ['PAM-1', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
+    # models = ['PAM-1', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
+    models = ['PC-1']
+    # num_words_inc = range(1, 11, 1)
+    num_words_inc = [10]
     specs = {
             'PAM-1':{'K':1, 'S':5, 'conn_den':0.8},
             'PAM-8':{'K':8, 'S':5, 'conn_den':0.8},
@@ -137,6 +148,7 @@ if __name__ == "__main__":
 
         conf = dict(N = 100, 
                     model=model, 
+                    num_words_inc=num_words_inc,
                     specs=specs[model],
                     seed=1)
 
@@ -146,6 +158,6 @@ if __name__ == "__main__":
     print(results)
     json.dump(results, open(os.path.join(save_base_dir, 'results.json'), 'w'))
 
-    args = dict(models=models, N=conf['N'], specs=specs)
+    args = dict(models=models, num_words_inc=num_words_inc, N=conf['N'], specs=specs)
     torch.save(dict(args=args, results=results), os.path.join(save_base_dir, 'results.pth'))
 
