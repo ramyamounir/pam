@@ -28,6 +28,7 @@ for k, v in data.items():
 
 df = pd.DataFrame(results)
 df = df.rename(columns={
+    'PAM-1': 'PAM k=1', 
     'PAM-8': 'PAM k=8', 
     'PAM-16': 'PAM k=16', 
     'PAM-24': 'PAM k=24', 
@@ -50,9 +51,9 @@ plt.grid(which='both', linestyle='--')
 
 # plt.yscale('log')
 plt.xticks(df.index)
-plt.title('Backward Transfer Error Vs. Input Correlation')
+plt.title('Backward Transfer Vs. Input Correlation')
 plt.xlabel(r'Correlation')
-plt.ylabel(r'BWT Error')
+plt.ylabel(r'BWT')
 
 plt.show()  # Show the plot
 

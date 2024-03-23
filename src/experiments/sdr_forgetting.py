@@ -14,6 +14,32 @@ from src.datasets.cifar import load_sequence_cifar
 from src.datasets.binary import generate_multiple_correlated_SDR_patterns
 
 
+def get_norm_ious(gt, rec):
+    if isinstance(rec[0], SDR):
+        norm_ious = []
+        for g, r in zip(gt, rec):
+            g_density = g.S/g.N
+            r_density = r.S/r.N
+            expected_iou = (g_density*r_density)/(g_density+r_density-(g_density*r_density))
+            iou = g.iou(r)
+            norm_iou = iou - expected_iou/(1.0 - expected_iou)
+            norm_ious.append(norm_iou.item())
+        return torch.mean(torch.tensor(norm_ious)).item()
+
+    else:
+        norm_ious = []
+        for g, r in zip((gt+1.0)/2.0, (rec+1.0)/2.0):
+
+            g_density = sum(g)/len(g)
+            r_density = sum(r)/len(r)
+            expected_iou = (g_density*r_density)/(g_density+r_density-(g_density*r_density))
+            iou = torch.sum(torch.logical_and(g, r))/torch.sum(torch.logical_or(g, r))
+            norm_iou = iou - expected_iou/(1.0 - expected_iou)
+            norm_ious.append(norm_iou.item())
+        return torch.mean(torch.tensor(norm_ious)).item()
+
+
+
 def get_n_errors(gt, rec):
     gts = torch.cat([g.bin.float() for g in gt])
     recs = torch.cat([r.bin.float() for r in rec])
@@ -57,28 +83,32 @@ def train_model(seq, net):
 
 def backward_transfer(seqs, net):
 
-    errors = []
+    metrics = []
     for seq in seqs:
 
         if isinstance(net, PamModel):
             recall = net.recall_predictive(seq)
-            error = get_n_errors(seq[1:], recall)
+            # error = get_n_errors(seq[1:], recall)
+            metric = get_norm_ious(seq[1:], recall)
         elif isinstance(net, SingleLayertPC):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
-            error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            # error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
         elif isinstance(net, MultilayertPC):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
-            error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            # error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
         elif isinstance(net, ModernAsymmetricHopfieldNetwork):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
-            error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            # error = torch.sum(X_polar[1:]!=recall[1:])/torch.numel(X_polar[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
 
-        errors.append(error.item())
+        metrics.append(metric)
 
-    return errors
+    return metrics
 
 
 def compute(N, P, model, bs, specs, seed=1):
@@ -107,9 +137,10 @@ if __name__ == "__main__":
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    models = ['PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
+    models = ['PAM-1', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
     bs = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
     specs = {
+            'PAM-1':{'K':1, 'S':5, 'conn_den':0.8},
             'PAM-8':{'K':8, 'S':5, 'conn_den':0.8},
             'PAM-16':{'K':16, 'S':5, 'conn_den':0.8},
             'PAM-24':{'K':24, 'S':5, 'conn_den':0.8},
@@ -121,6 +152,7 @@ if __name__ == "__main__":
 
     results = {}
     for i, model in enumerate(models):
+        print(f'Current model: {model}')
 
         conf = dict(
                     N = 100, 

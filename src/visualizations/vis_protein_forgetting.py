@@ -27,7 +27,7 @@ def calc_bwt(results):
 
 
 
-data = json.load(open('results/protein_forgetting/run_002/results.json', 'r'))
+data = json.load(open('results/protein_forgetting/run_001/results.json', 'r'))
 results = {k:calc_bwts(v) for k, v in data.items()}
 
 df = pd.DataFrame(results)
@@ -40,7 +40,7 @@ df = df.rename(columns={
     'HN-1-50': 'AHN d=1 s=$N/2$', 
     'HN-2-50': 'AHN d=2, s=$N/2$'})
 df.index = [2, 3, 4, 5, 6, 7, 8, 9, 10]
-df.drop(columns=['AHN d=1 s=$N/2$', 'AHN d=2, s=$N/2$'], inplace=True)
+# df.drop(columns=['AHN d=1 s=$N/2$', 'AHN d=2, s=$N/2$'], inplace=True)
 print(df)
 
 
@@ -56,9 +56,9 @@ plt.grid(which='both', linestyle='--')
 
 # plt.yscale('log')
 plt.xticks(df.index)
-plt.title('Backward Transfer Error Vs. Protein Sequences')
+plt.title('Backward Transfer Vs. Protein Sequences')
 plt.xlabel(r'Number of Protein Sequences')
-plt.ylabel(r'BWT Error')
+plt.ylabel(r'BWT')
 
 plt.show()  # Show the plot
 

@@ -18,6 +18,34 @@ def get_ious(gt, rec):
     else:
         return torch.mean(torch.tensor([torch.sum(torch.logical_and(g,r)).item()/torch.sum(torch.logical_or(g,r)).item() for g,r in zip((gt+1.0)/2.0, (rec+1.0)/2.0)])).item()
 
+
+def get_norm_ious(gt, rec):
+    if isinstance(rec[0], SDR):
+
+        norm_ious = []
+        for g, r in zip(gt, rec):
+            g_density = g.S/g.N
+            r_density = r.S/r.N
+            expected_iou = (g_density*r_density)/(g_density+r_density-(g_density*r_density))
+            iou = g.iou(r)
+            norm_iou = iou - expected_iou/(1.0 - expected_iou)
+            norm_ious.append(norm_iou.item())
+        return torch.mean(torch.tensor(norm_ious)).item()
+
+
+    else:
+
+        norm_ious = []
+        for g, r in zip((gt+1.0)/2.0, (rec+1.0)/2.0):
+
+            g_density = sum(g)/len(g)
+            r_density = sum(r)/len(r)
+            expected_iou = (g_density*r_density)/(g_density+r_density-(g_density*r_density))
+            iou = torch.sum(torch.logical_and(g, r))/torch.sum(torch.logical_or(g, r))
+            norm_iou = iou - expected_iou/(1.0 - expected_iou)
+            norm_ious.append(norm_iou.item())
+        return torch.mean(torch.tensor(norm_ious)).item()
+
 def get_n_errors(gt, rec):
     if isinstance(rec[0], SDR):
         gts = torch.cat([g.bin.float() for g in gt])
@@ -70,24 +98,28 @@ def backward_transfer(seqs, net):
         if isinstance(net, PamModel):
             recall = net.recall_predictive(seq)
             # metric = get_n_errors(seq[1:], recall)
-            metric = get_ious(seq[1:], recall)
+            # metric = get_ious(seq[1:], recall)
+            metric = get_norm_ious(seq[1:], recall)
         elif isinstance(net, SingleLayertPC):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
             # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+            # metric = get_ious(X_polar[1:], recall[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
 
         elif isinstance(net, MultilayertPC):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
             # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+            # metric = get_ious(X_polar[1:], recall[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
 
         elif isinstance(net, ModernAsymmetricHopfieldNetwork):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
             recall = net.recall_seq(X_polar, 'online')
             # metric = get_n_errors(X_polar[1:], recall[1:])
-            metric = get_ious(X_polar[1:], recall[1:])
+            # metric = get_ious(X_polar[1:], recall[1:])
+            metric = get_norm_ious(X_polar[1:], recall[1:])
 
         metrics.append(metric)
 
@@ -114,10 +146,11 @@ def compute(N, model, specs, seed=1):
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_test'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
     models = ['PAM-1', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
+    # models = ['HN-2-5']
     specs = {
             'PAM-1':{'K':1, 'S':5, 'conn_den':0.8},
             'PAM-8':{'K':8, 'S':5, 'conn_den':0.8},
