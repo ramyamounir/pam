@@ -70,7 +70,39 @@ class ModernAsymmetricHopfieldNetwork(nn.Module):
                 recall[k] = torch.sign(self.forward(seq, recall[k-1:k])) if self.data_type == 'binary' else self.forward(seq, recall[k-1:k]) # 1xN
 
         return recall
-                
+
+    def recall_seqs(self, seq, X, query):
+        """
+        Basically, we compare the frames in seq with all frames in all sequences
+
+        X: sample_size x seq_len x N, the whole memory
+        seq: seq_len x N
+        """
+        sample_size, seq_len, N = X.shape
+        recall = torch.zeros((seq_len, N))
+        recall[0] = seq[0].clone().detach()
+
+        # select all frames from all squences, except the final frames
+        # this is our "key"
+        K = X[:, :-1].reshape((sample_size * (seq_len - 1), N))
+
+        # select all frames from all sequences except the first frames
+        # this is out "value"
+        V = X[:, 1:].reshape((sample_size * (seq_len - 1), N))
+
+        if query == 'online':
+            # recall using true image at each step
+            # recall[1:] = model(X, seq[:-1]) # (P-1)xN
+            score = F.softmax(self.beta * torch.matmul(seq[:-1], K.t()), dim=1) # (seq_len-1) x (sample_size)(seq_len-1)
+            recall[1:] = torch.matmul(score, V) # (P-1)xN
+        else:
+            # recall using predictions from previous step
+            for k in range(1, seq_len):
+                score = F.softmax(self.beta * torch.matmul(recall[k-1:k], K.t()), dim=1) # 1 x (sample_size)(seq_len-1)
+                recall[k] = torch.matmul(score, V) # 1xN
+
+        return recall
+                    
 
 
 if __name__ == "__main__":
