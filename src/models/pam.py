@@ -1,249 +1,97 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import numpy as np
+import random
+from random import shuffle
 
-from src.models.pam_utils import SDR, Connections, Attractors
-from tqdm import tqdm
+from src.utils.sdr import SDR
 
 
-class PamModel():
+class Connections:
     def __init__(self, 
-                 num_base_neurons=512, 
-                 num_neurons_per_minicolumn=4,
-                 sparsity=10,
-                 connections_density=0.5,
-                 connections_decay=0.0,
-                 learning_rate=1,
-                 persistance=1,
-                 generative=False
+                 N_c, 
+                 N_k,
+                 synaptic_density=0.5, 
+                 eta_inc = 0.1,
+                 eta_dec = 0.1,
+                 eta_decay=0.0, 
+                 init_mean=0.0,
+                 init_std=0.1
                  ):
 
-        self.num_base_neurons = num_base_neurons
-        self.num_neurons_per_minicolumn = num_neurons_per_minicolumn
-        self.sparsity = sparsity
-        self.num_neurons = self.num_base_neurons*self.num_neurons_per_minicolumn
-        self.persistance = persistance
-        self.generative = generative
-
-        self.connections = Connections(self.num_neurons, self.num_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
-        if self.generative: self.attractors = Attractors(self.num_base_neurons, connections_density=connections_density, connections_decay=connections_decay, learning_rate=learning_rate)
-        self.start_sdr = self.create_start_sdr()
-
-        self.parameters = ['connections', 'start_sdr']
-        if hasattr(self, 'attractors'): self.parameters.append('attractors')
-        self.reset()
-
-    def create_start_sdr(self):
-        inc = torch.arange(start=0, end=self.num_neurons, step= self.num_neurons_per_minicolumn)
-        rand = torch.randint(low=0, high=self.num_neurons_per_minicolumn, size=(self.num_base_neurons,))
-        val = (inc + rand).long()
-        return SDR(N=self.num_neurons, ix=val)
-
-    def encode_start(self, feature):
-        return SDR.from_bin(torch.logical_and(feature.bin, self.start_sdr.bin))
-
-    def predict_start(self, feature):
-        input_start = self.encode_start(feature)
-        self.prediction = self.connections(input_start)
-        self.prev_sdr = input_start
-
-    def calculate_to_train(self, feature, prediction_out, prediction_sdr):
-
-        feature_bin = feature.bin.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        prediction_sdr = prediction_sdr.bin.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        for_training_encoder = torch.zeros_like(feature_bin)
+        self.N_c = N_c
+        self.N_k = N_k
+        self.synaptic_density = synaptic_density
+        self.eta_inc = eta_inc
+        self.eta_dec = eta_dec
+        self.eta_decay = eta_decay
+        self.init_mean = init_mean
+        self.init_std = init_std
 
-        prediction_out = prediction_out.reshape(self.num_base_neurons, self.num_neurons_per_minicolumn)
-        prediction_out_argmax = torch.argmax(prediction_out, dim=-1)
+        self.initialize()
 
-        reduced_feature = feature.reduce(self.num_neurons_per_minicolumn)
-        max_feature_preds = prediction_out[reduced_feature.val,prediction_out_argmax[reduced_feature.val]]
-        boundary = (max_feature_preds>0.5).sum()/len(max_feature_preds) < 0.8
+    def clamp(self):
+        self.W = self.W.clamp(-1.0, 1.0)
 
-        for_training_encoder[range(self.num_base_neurons),prediction_out_argmax] = True
-        result = torch.logical_and(feature_bin, for_training_encoder)
-        return SDR.from_bin(result.reshape(-1)), boundary
+    def generate_binary_tensor(self):
+        total_elements = torch.prod(torch.tensor(self.W.shape))
+        tensor = torch.zeros_like(self.W, dtype=torch.bool)
+        indices = torch.randperm(total_elements)[:int(self.synaptic_density*total_elements)]
+        row_indices = indices // self.W.shape[1]
+        col_indices = indices % self.W.shape[1]
+        tensor[row_indices, col_indices] = 1
+        return tensor
 
-    def process_input(self, feature, prediction_out):
-        prediction_sdr = SDR.from_nodes_threshold(prediction_out, threshold=0.5)
-        return self.calculate_to_train(feature, prediction_out, prediction_sdr)
+    def initialize(self):
 
-    def generate_from(self, prediction, gen, it=100):
-        for _ in range(it):
-            gen = SDR.from_nodes_topk(self.attractors(gen), k=self.sparsity).intersect(prediction)
-            # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
+        self.W = torch.zeros((self.N_c*self.N_k, self.N_c*self.N_k))
+        nn.init.normal_(self.W, mean=self.init_mean, std=self.init_std)
 
-        return gen
+        self.W_mask = self.generate_binary_tensor()
+        self.W *= self.W_mask
 
-    def generate(self, prediction, it=100):
-        gen = prediction.choose(self.sparsity)
-        for _ in range(it):
-            gen = SDR.from_nodes_topk(self.attractors(gen), k=self.sparsity).intersect(prediction)
-            # gen = SDR.from_nodes_threshold(self.attractors(gen), threshold=0.5).intersect(prediction)
-        return gen
+        self.clamp()
+        self.parameters = ['W', 'W_mask']
 
 
-    def create_output(self, predicted, generated):
-        output = dict(
-                predicted = SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn),
-                # predicted = SDR.from_nodes_topk(self.prediction, k=self.sparsity).reduce(self.num_neurons_per_minicolumn),
-                generated = generated
-                )
-        return output
+    def __call__(self, x_in_sdr):
+        assert isinstance(x_in_sdr, SDR), "input must be an SDR"
+        return self.W.t()@x_in_sdr.to_nodes()
 
-    def train_single(self, input_sdr):
+    def train_A(self, x_in_sdr, x_out_sdr):
+        assert isinstance(x_in_sdr, SDR), "input must be an SDR"
+        assert isinstance(x_out_sdr, SDR), "output must be an SDR"
 
-        input_sdr_expanded = input_sdr.expand(self.num_neurons_per_minicolumn)
+        x_in_nodes = x_in_sdr.to_nodes()
+        inc = x_in_nodes@x_out_sdr.to_nodes(reverse=False).t()
+        dec = x_in_nodes@x_out_sdr.to_nodes(reverse=True).t()
 
-        if self.prediction == None:
-            self.predict_start(input_sdr_expanded)
-            if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-            else: generated = self.prediction
-            return self.create_output(self.prediction, generated)
+        self.W += (self.eta_inc * inc) - (self.eta_dec * dec) - (self.eta_decay)
+        self.W *= self.W_mask
+        self.clamp()
 
-        processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
+    def train_B(self, union_sdr, single_sdr):
+        assert isinstance(union_sdr, SDR), "union must be an SDR"
+        assert isinstance(single_sdr, SDR), "single must be an SDR"
 
+        single_nodes = single_sdr.to_nodes()
+        inc = single_nodes@single_nodes.t()
+        dec1 = single_nodes@(union_sdr-single_sdr).to_nodes().t()
+        dec2 = (union_sdr-single_sdr).to_nodes().t()@single_nodes
 
-        # train prediction
-        counter = 0
-        while counter<=self.persistance:
-            self.connections.train(self.prev_sdr, processed_input)
-            prediction = self.connections(self.prev_sdr)
-            pred_sdr = SDR.from_nodes_threshold(prediction, threshold=0.5)
-            overlap = pred_sdr.overlap(processed_input)
-            if overlap >= self.sparsity: break
-            counter += 1
+        self.W += (self.eta_inc * inc) - (0.5*self.eta_dec * dec1) - (0.5*self.eta_dec * dec2) - (self.eta_decay)
+        self.W *= self.W_mask
+        self.clamp()
 
-        # train generative
-        if self.generative:
-            counter = 0
-            while counter<=self.persistance:
-                reduced_pred = pred_sdr.reduce(self.num_neurons_per_minicolumn)
-                self.attractors.process(input_sdr, reduced_pred)
-                counter += 1
-
-        self.prediction = self.connections(processed_input)
-        self.prev_sdr = processed_input
-        if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-        else: generated = self.prediction
-
-        return self.create_output(self.prediction, generated)
-
-    def train_seq(self, seq):
-        self.reset()
-        for s in seq:
-            self.train_single(s)
-
-
-    def infer_single(self, input_sdr):
-
-        input_sdr_expanded = input_sdr.expand(self.num_neurons_per_minicolumn)
-
-        if self.prediction == None:
-            self.predict_start(input_sdr_expanded)
-            if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-            else: generated = self.prediction
-            return self.create_output(self.prediction, generated)
-
-        processed_input, boundary = self.process_input(input_sdr_expanded, self.prediction)
-
-        self.prediction = self.connections(processed_input)
-
-        if self.generative: generated = self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-        else: generated = self.prediction
-
-        return self.create_output(self.prediction, generated)
-
-    def recall_seq(self, seq, query='online', gen=False):
-
-        result = []
-
-        self.reset()
-        for s_ix, s in enumerate(seq):
-            if s_ix >0 and query=='offline': 
-                s = res['predicted'] if gen==False else res['generated']
-
-            res = self.infer_single(s)
-            result.append(res['predicted'] if gen==False else res['generated'])
-
-        return result
-
-    def recall_predictive(self, seq):
-
-        result = []
-        self.reset()
-
-        for s_ix, s in enumerate(seq):
-
-            if self.prediction == None:
-                input_sdr_expanded = s.expand(self.num_neurons_per_minicolumn)
-                self.predict_start(input_sdr_expanded)
-                continue
-
-            processed_input, boundary = self.process_input(s.expand(self.num_neurons_per_minicolumn), self.prediction)
-            result.append(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-            self.prediction = self.connections(processed_input)
-
-
-        return result
-
-    def recall_generative(self, seq):
-
-        result = []
-        self.reset()
-
-        for s_ix, s in enumerate(seq):
-
-            if self.prediction == None:
-                input_sdr_expanded = s.expand(self.num_neurons_per_minicolumn)
-                self.predict_start(input_sdr_expanded)
-                continue
-
-            s_clean = self.generate_from(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn), s)
-            processed_input, boundary = self.process_input(s_clean.expand(self.num_neurons_per_minicolumn), self.prediction)
-            result.append(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn))
-            self.prediction = self.connections(processed_input)
-
-        return result
-
-
-    def recall_generative_random(self, start, seq_len):
-        result = [start]
-        self.reset()
-
-        for i in range(seq_len):
-
-            if self.prediction == None:
-                input_sdr_expanded = start.expand(self.num_neurons_per_minicolumn)
-                self.predict_start(input_sdr_expanded)
-                result.append(self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)))
-                continue
-
-
-            processed_input, boundary = self.process_input(result[-1].expand(self.num_neurons_per_minicolumn), self.prediction)
-            self.prediction = self.connections(processed_input)
-            result.append(self.generate(SDR.from_nodes_threshold(self.prediction, threshold=0.5).reduce(self.num_neurons_per_minicolumn)))
-
-        return result
-
-
-
-
-
-    def reset(self):
-        self.prediction = None
-        self.prev_sdr = None
 
     def save(self, path=None):
         to_save = {}
         for p in self.parameters:
             attr = getattr(self, p)
-            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save(path=None)
-
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save()
 
         if path != None: torch.save(to_save, path)
         else: return to_save
-
 
     def load(self, path):
         parameters = torch.load(path) if isinstance(path, str) else path
@@ -254,40 +102,207 @@ class PamModel():
                 setattr(self, name, weight)
             else:
                 attr.load(weight)
-        
 
 
+class PamModel:
+
+    def __init__(self,
+                 N_c, 
+                 N_k,
+                 W,
+                 transition_configs,
+                 emission_configs,
+                 ):
+
+        self.N_c = N_c
+        self.N_k = N_k
+        self.W = W
+        self.transition_configs = transition_configs
+        self.emission_configs = emission_configs
+
+        self.configs = ['N_c', 'N_k', 'W', 'transition_configs', 'emission_configs']
+        self.initialize()
+
+    def initialize(self):
+
+        self.transition = Connections(
+                            N_c = self.N_c, 
+                            N_k = self.N_k,   
+                            synaptic_density = self.transition_configs['synaptic_density'],
+                            eta_inc = self.transition_configs['eta_inc'], 
+                            eta_dec = self.transition_configs['eta_dec'], 
+                            eta_decay = self.transition_configs['eta_decay'],
+                            init_mean = self.transition_configs['init_mean'],
+                            init_std = self.transition_configs['init_std']
+                            )
+
+        self.emission = Connections(
+                            N_c = self.N_c, 
+                            N_k = 1,
+                            synaptic_density = self.emission_configs['synaptic_density'],
+                            eta_inc = self.emission_configs['eta_inc'], 
+                            eta_dec = self.emission_configs['eta_dec'], 
+                            eta_decay = self.emission_configs['eta_decay'],
+                            init_mean = self.emission_configs['init_mean'],
+                            init_std = self.emission_configs['init_std']
+                            )
+
+        self.start_sdr = self.create_max_sdr(logits=torch.randn((self.N_k*self.N_c, 1)))
+        self.parameters = ['transition', 'emission', 'start_sdr']
+
+    def create_max_sdr(self, logits):
+        logits_reshaped = logits.reshape(self.N_c, self.N_k)
+        max_indices = torch.argmax(logits_reshaped, dim=1)
+        scatter_indices = torch.arange(0, self.N_c) * self.N_k + max_indices
+        return SDR(self.N_c*self.N_k, ix=scatter_indices)
+
+    def encode_start(self, feature):
+        return SDR.from_bin(torch.logical_and(feature.bin, self.start_sdr.bin))
+
+    def forward_transition(self, z):
+        return SDR.from_nodes_threshold( self.transition(z), threshold=self.transition_configs['threshold'])
+
+    def evaluate_transition(self, z, p):
+        return p in self.forward_transition(z).reduce(self.N_k)
+
+    def forward_emission(self, z_pred, z_pred_single, iters=100):
+        z_pred_single_input = z_pred_single
+        for i in range(iters):
+            z_pred_out = self.emission(z_pred_single_input)
+            z_pred_single_output = SDR.from_nodes_threshold(z_pred_out, threshold=self.emission_configs['threshold'])
+            z_pred_single_output = z_pred_single_output.intersect(z_pred)
+
+            if z_pred_single_input == z_pred_single_output: break
+            z_pred_single_input = z_pred_single_output
+
+        return z_pred_single_output
+
+    def evaluate_emission(self, z_pred, p, trials):
+        for _ in range(trials):
+            if not self.forward_emission(z_pred, p.choose(1)) == p:
+                return False
+        return True
+
+    def learn_sequence(self, sequence):
+
+        z = self.encode_start(sequence[0].expand(self.N_k))
+        for p in sequence[1:]:
+
+            # train transition
+            a = self.transition(z)
+            z_new = p.expand(self.N_k).intersect(self.create_max_sdr(a))
+            for i in range(1000):
+                self.transition.train_A(z, z_new)
+                if self.evaluate_transition(z, p): break
+
+            # train emission
+            z_pred = SDR.from_nodes_threshold(self.transition(z), threshold=self.emission_configs['threshold']).reduce(self.N_k)
+            for i in range(1000):
+                self.emission.train_B(z_pred, p)
+                if self.evaluate_emission(z_pred, p, trials=3): break
+
+            # update z
+            z = z_new
+
+    def recall_sequence_online(self, sequence):
+        recall = []
+        z = self.encode_start(sequence[0].expand(self.N_k))
+        for p in sequence[1:]:
+            a = self.transition(z)
+
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold'])
+            recall.append(z_pred.reduce(self.N_k))
+
+            z = p.expand(self.N_k).intersect(self.create_max_sdr(a))
+
+        return recall
+
+    def generate_sequence_online(self, sequence):
+        generated = []
+        z = self.encode_start(sequence[0].expand(self.N_k))
+        for p in sequence[1:]:
+
+            # transition
+            a = self.transition(z)
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']).reduce(self.N_k)
+
+            # attractors
+            z_pred_single = self.forward_emission(z_pred, p)
+            if len(z_pred_single) == 0: z_pred_single = p.choose(self.W)
+            generated.append(z_pred_single)
+
+            # update states
+            z = z_pred_single.expand(self.N_k).intersect(self.create_max_sdr(a))
+
+        return generated
 
 
-if __name__ == "__main__":
-    pam_model = PamModel(128, 4, 10, 0.8, 0.0, 1.0, 100)
+    def recall_sequence_offline(self, x_in_sdr, seq_len):
+        recall = []
+        z = self.encode_start(x_in_sdr.expand(self.N_k))
+        for _ in range(seq_len):
+            z_pred = self.forward_transition(z)
+            recall.append(z_pred.reduce(self.N_k))
+            z = z_pred
 
-    seq = [SDR(128, 10) for _ in range(100)]
-
-    # gt
-    print('gt:')
-    for s in seq:
-        print(s)
-
-    # train
-    pam_model.train_seq(seq)
-
-    print('\nonline predicted:')
-    rec = pam_model.recall_seq(seq, 'online')
-    for r in rec:
-        print(r)
+        return recall
 
 
-    print('\noffline predicted:')
-    rec = pam_model.recall_seq(seq, 'offline')
-    for r in rec:
-        print(r)
-    
+    def generate_sequence_offline(self, x_in_sdr, seq_len):
+        generated = []
+
+        z = self.encode_start(x_in_sdr.expand(self.N_k))
+        for _ in range(seq_len):
+
+            # transition
+            a = self.transition(z)
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']).reduce(self.N_k)
+
+            # attractors
+            for i in range(100):
+                z_pred_single = self.forward_emission(z_pred, z_pred.choose(self.W))
+                if len(z_pred_single) >= max(1,self.W-2): break
+
+            if len(z_pred_single) == 0: z_pred_single = z_pred.choose(self.W)
+            if len(z_pred_single) > self.W: z_pred_single = z_pred_single.choose(self.W)
+
+            generated.append(z_pred_single)
+
+            # update states
+            z = z_pred_single.expand(self.N_k).intersect(self.create_max_sdr(a))
+
+        return generated
 
 
+    def save(self, path=None):
+        to_save = {}
+        for p in self.parameters:
+            attr = getattr(self, p)
+            to_save[p] = attr if isinstance(attr, torch.Tensor) else attr.save(path=None)
+
+        if path != None: 
+            to_save['configs'] = {c:getattr(self,c) for c in self.configs}
+            torch.save(to_save, path)
+        else: return to_save
 
 
+    def load(self, path):
+        parameters = torch.load(path) if isinstance(path, str) else path
+
+        for name, weight in parameters.items():
+            if name not in self.parameters: continue
+
+            attr = getattr(self, name)
+            if isinstance(attr, torch.Tensor):
+                setattr(self, name, weight)
+            else:
+                attr.load(weight)
 
 
-
+    @staticmethod
+    def load_model(path):
+        loaded = torch.load(path)
+        model = PamModel(**loaded['configs'])
+        model.load(loaded)
+        return model
 

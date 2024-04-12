@@ -1,9 +1,9 @@
 import sys; sys.path.append('./')
-from src.experiments.utils import to_torch
 import numpy as np
 import torch
 
-from src.models.pam_utils import SDR
+from src.utils.exps import to_torch
+from src.utils.sdr import SDR
 
 
 def generate_correlated_binary_patterns(P, N, b, device, seed=1):
@@ -25,7 +25,7 @@ def generate_correlated_binary_patterns(P, N, b, device, seed=1):
 
     return to_torch(X, device)
 
-def generate_correlated_SDR_patterns(P, N, b, S, seed=1):
+def generate_correlated_SDR_patterns(P, N, b, W):
     # higher b means more correlation -> smaller vocab size
     vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
     seq_ids = torch.cat([torch.randperm(vocab_size) for _ in range(int(P//vocab_size)+1)])[:P]
@@ -33,7 +33,7 @@ def generate_correlated_SDR_patterns(P, N, b, S, seed=1):
     sdrs = []
     for seed in seq_ids:
         torch.manual_seed(seed)
-        sdrs.append(SDR(N, S))
+        sdrs.append(SDR(N, W))
 
     return sdrs
 
@@ -60,7 +60,6 @@ def add_noise_SDR_patterns(seq, e):
     noisy_seq = [seq[0]]
     for s in seq[1:]:
         s = SDR.from_SDR(s, e=e)
-        # s = s.add_noise(n=int(e*s.N))
         noisy_seq.append(s)
 
     return noisy_seq

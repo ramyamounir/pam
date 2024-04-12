@@ -102,7 +102,7 @@ class MultilayertPC(nn.Module):
         return energy
 
 
-    def train_seq(self, seq):
+    def train_seq(self, seq, verbose=False):
         """
         Function to train multi layer tPC
         """
@@ -125,10 +125,10 @@ class MultilayertPC(nn.Module):
                 epoch_loss += energy.item() / seq_len
 
             losses.append(epoch_loss)
-            if (learn_iter + 1) % 10 == 0:
+            if verbose and (learn_iter + 1) % 10 == 0:
                 print(f'Epoch {learn_iter+1}, loss {epoch_loss}')
             
-        print(f'training PC complete, time: {time.time() - start_time}')
+        if verbose: print(f'training PC complete, time: {time.time() - start_time}')
         return losses
 
 
