@@ -78,8 +78,9 @@ class Connections:
         inc = single_nodes@single_nodes.t()
         dec1 = single_nodes@(union_sdr-single_sdr).to_nodes().t()
         dec2 = (union_sdr-single_sdr).to_nodes().t()@single_nodes
+        dec = dec1+dec2
 
-        self.W += (self.eta_inc * inc) - (0.5*self.eta_dec * dec1) - (0.5*self.eta_dec * dec2) - (self.eta_decay)
+        self.W += (self.eta_inc * inc) - (self.eta_dec * dec) - (self.eta_decay)
         self.W *= self.W_mask
         self.clamp()
 
@@ -147,7 +148,8 @@ class PamModel:
                             init_std = self.emission_configs['init_std']
                             )
 
-        self.start_sdr = self.create_max_sdr(logits=torch.randn((self.N_k*self.N_c, 1)))
+        self.start_sdr = self.create_max_sdr(logits=torch.randn((self.N_c*self.N_k, 1)))
+        self.duty_cycle = torch.zeros((self.N_c, self.N_k))
         self.parameters = ['transition', 'emission', 'start_sdr']
 
     def create_max_sdr(self, logits):
@@ -156,11 +158,26 @@ class PamModel:
         scatter_indices = torch.arange(0, self.N_c) * self.N_k + max_indices
         return SDR(self.N_c*self.N_k, ix=scatter_indices)
 
+    def boost(self, a, bs):
+        boost_factor = self.duty_cycle/(self.duty_cycle.sum(-1, keepdim=True)+1e-8)
+        a += bs*((1/self.N_k)-boost_factor).reshape(a.shape) + torch.normal(mean=0.0, std=0.1, size=a.shape)
+        return a
+
+    def stick(self, a):
+        a = a.reshape(self.N_c, self.N_k)
+        a_best = torch.zeros_like(a)
+        a_best[a >= self.W*self.transition_configs['threshold']] = 1.0
+        a_best += torch.normal(mean=0.0, std=0.01, size=a_best.shape)
+        return a_best
+
+    def record_duty(self, z):
+        self.duty_cycle += z.bin.reshape(self.N_c, self.N_k)
+
     def encode_start(self, feature):
         return SDR.from_bin(torch.logical_and(feature.bin, self.start_sdr.bin))
 
     def forward_transition(self, z):
-        return SDR.from_nodes_threshold( self.transition(z), threshold=self.transition_configs['threshold'])
+        return SDR.from_nodes_threshold( self.transition(z), threshold=self.transition_configs['threshold']*len(z))
 
     def evaluate_transition(self, z, p):
         return p in self.forward_transition(z).reduce(self.N_k)
@@ -169,7 +186,7 @@ class PamModel:
         z_pred_single_input = z_pred_single
         for i in range(iters):
             z_pred_out = self.emission(z_pred_single_input)
-            z_pred_single_output = SDR.from_nodes_threshold(z_pred_out, threshold=self.emission_configs['threshold'])
+            z_pred_single_output = SDR.from_nodes_threshold(z_pred_out, threshold=self.emission_configs['threshold']*len(z_pred_single_input))
             z_pred_single_output = z_pred_single_output.intersect(z_pred)
 
             if z_pred_single_input == z_pred_single_output: break
@@ -177,9 +194,9 @@ class PamModel:
 
         return z_pred_single_output
 
-    def evaluate_emission(self, z_pred, p, trials):
-        for _ in range(trials):
-            if not self.forward_emission(z_pred, p.choose(1)) == p:
+    def evaluate_emission(self, z_pred, p):
+        for c in p:
+            if not self.forward_emission(z_pred, c) == p:
                 return False
         return True
 
@@ -190,27 +207,28 @@ class PamModel:
 
             # train transition
             a = self.transition(z)
-            z_new = p.expand(self.N_k).intersect(self.create_max_sdr(a))
+            z_new = p.expand(self.N_k).intersect(self.create_max_sdr(self.stick(a)))
+
             for i in range(1000):
                 self.transition.train_A(z, z_new)
                 if self.evaluate_transition(z, p): break
 
             # train emission
-            z_pred = SDR.from_nodes_threshold(self.transition(z), threshold=self.emission_configs['threshold']).reduce(self.N_k)
+            z_pred = SDR.from_nodes_threshold(self.transition(z), threshold=self.transition_configs['threshold']*len(z)).reduce(self.N_k)
             for i in range(1000):
                 self.emission.train_B(z_pred, p)
-                if self.evaluate_emission(z_pred, p, trials=3): break
+                if self.evaluate_emission(z_pred, p): break
 
             # update z
             z = z_new
 
     def recall_sequence_online(self, sequence):
-        recall = []
+        recall = [sequence[0]]
         z = self.encode_start(sequence[0].expand(self.N_k))
         for p in sequence[1:]:
             a = self.transition(z)
 
-            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold'])
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']*len(z))
             recall.append(z_pred.reduce(self.N_k))
 
             z = p.expand(self.N_k).intersect(self.create_max_sdr(a))
@@ -218,13 +236,13 @@ class PamModel:
         return recall
 
     def generate_sequence_online(self, sequence):
-        generated = []
+        generated = [sequence[0]]
         z = self.encode_start(sequence[0].expand(self.N_k))
         for p in sequence[1:]:
 
             # transition
             a = self.transition(z)
-            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']).reduce(self.N_k)
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']*len(z)).reduce(self.N_k)
 
             # attractors
             z_pred_single = self.forward_emission(z_pred, p)
@@ -238,7 +256,7 @@ class PamModel:
 
 
     def recall_sequence_offline(self, x_in_sdr, seq_len):
-        recall = []
+        recall = [x_in_sdr]
         z = self.encode_start(x_in_sdr.expand(self.N_k))
         for _ in range(seq_len):
             z_pred = self.forward_transition(z)
@@ -249,19 +267,19 @@ class PamModel:
 
 
     def generate_sequence_offline(self, x_in_sdr, seq_len):
-        generated = []
+        generated = [x_in_sdr]
 
         z = self.encode_start(x_in_sdr.expand(self.N_k))
         for _ in range(seq_len):
 
             # transition
             a = self.transition(z)
-            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']).reduce(self.N_k)
+            z_pred = SDR.from_nodes_threshold(a, threshold=self.transition_configs['threshold']*len(z)).reduce(self.N_k)
 
             # attractors
             for i in range(100):
-                z_pred_single = self.forward_emission(z_pred, z_pred.choose(self.W))
-                if len(z_pred_single) >= max(1,self.W-2): break
+                z_pred_single = self.forward_emission(z_pred, z_pred.choose(1))
+                if len(z_pred_single) == self.W: break
 
             if len(z_pred_single) == 0: z_pred_single = z_pred.choose(self.W)
             if len(z_pred_single) > self.W: z_pred_single = z_pred_single.choose(self.W)

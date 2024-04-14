@@ -7,6 +7,7 @@ import sys; sys.path.append('./')
 from src.models.pam import PamModel
 from src.utils.sdr import SDR
 from src.utils.exps import checkdir, accuracy_SDR, accuracy_POLAR, set_seed
+from src.utils.configs import get_pam_configs, get_pc_configs, get_hn_configs
 from src.models.single_tpc import SingleLayertPC
 from src.models.double_tpc import MultilayertPC
 from src.models.mcahn import ModernAsymmetricHopfieldNetwork
@@ -90,7 +91,8 @@ def search_Pmax(N, tolerance, model, start, specs, Bs, seed):
                 net = PamModel(N_c=N, N_k=specs['N_k'], W=W, **specs['configs'])
                 net.learn_sequence(X)
                 recall = net.generate_sequence_offline(X[0], len(X)-1)
-                iou = accuracy_SDR(X[1:], recall)
+                iou = accuracy_SDR(X[1:], recall[1:])
+
 
             elif model.startswith('PC'):
                 X_polar = torch.stack([x.bin.float() for x in X])*2.0-1.0
@@ -125,66 +127,15 @@ def search_Pmax(N, tolerance, model, start, specs, Bs, seed):
     
     return Pmaxs
 
-def get_pam_configs():
-
-    transition_configs = {
-            'synaptic_density': 1.0,
-            'eta_inc': 0.1,
-            'eta_dec': 0.0,
-            'eta_decay': 0.0,
-            'init_mean': -0.8,
-            'init_std': 0.1,
-            'threshold': 2.5,
-            }
-
-    emission_configs = {
-            'synaptic_density': 1.0,
-            'eta_inc': 0.1,
-            'eta_dec': 0.1,
-            'eta_decay': 0.0,
-            'init_mean': 0.0,
-            'init_std': 0.1,
-            'threshold': 0.25,
-            }
-
-    return dict(transition_configs=transition_configs, emission_configs=emission_configs)
-
-def get_pc_configs(l=1):
-
-    if l==1:
-        configs = {
-                'lr': 1e-4 ,
-                'data_type': 'binary',
-                'learn_iters': 800,
-                }
-    else:
-        configs = {
-                'learn_lr': 1e-4,
-                'inf_lr': 1e-2,
-                'learn_iters': 800,
-                'inf_iters': 400,
-                }
-
-    return configs
-
-def get_hn_configs(d=1):
-
-    configs = {
-            'data_type': 'binary',
-            'sep': d,
-            }
-    return configs
-
-
 def main(save_base_dir, seed):
 
     tolerance = 0.9
-    models = ['PAM-8', 'PAM-16', 'PC-1', 'HN-1-5', 'HN-1-50', 'HN-2-5', 'HN-2-50']
+    models = ['PAM-4', 'PAM-8', 'PC-1', 'HN-1-5', 'HN-1-50', 'HN-2-5', 'HN-2-50']
 
     bs = torch.arange(0.0, 0.6, 0.1)
     specs = {
+            'PAM-4':{'N_k':4, 'W':5, 'W_type':'fixed', 'configs': get_pam_configs()},
             'PAM-8':{'N_k':8, 'W':5, 'W_type':'fixed', 'configs': get_pam_configs()},
-            'PAM-16':{'N_k':16, 'W':5, 'W_type':'fixed', 'configs': get_pam_configs()},
             'PC-1':{'L':1, 'W':5, 'W_type':'fixed', 'configs': get_pc_configs(l=1)},
             'PC-2':{'L':2, 'W':5, 'W_type':'fixed', 'configs': get_pc_configs(l=2)},
             'HN-1-5': {'W':5, 'W_type':'fixed', 'configs': get_hn_configs(d=1)},
@@ -194,8 +145,8 @@ def main(save_base_dir, seed):
              }
 
     starts = {
-              'PAM-8':[500, 500, 450, 400, 400, 400],
-              'PAM-16':[1000, 600, 500, 500, 500, 500],
+              'PAM-4':[500, 480, 460, 440, 420, 400],
+              'PAM-8':[1000, 950, 900, 850, 800, 750],
               'PC-1':[90, 90, 90, 90, 90, 90],
               'PC-2':[90, 90, 90, 90, 90, 90],
               'HN-1-5':[2, 2, 2, 2, 2, 2],
@@ -219,7 +170,7 @@ def main(save_base_dir, seed):
         results[models[i]] = Pmaxs
 
 
-    # print(results)
+    print(results)
     json.dump(results, open(os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.json'), 'w'))
     args = dict(tolerance = tolerance, models = models, N=conf['N'], Bs=bs, starts=starts, specs=specs, seed=conf['seed'])
     torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.pth'))
@@ -228,7 +179,7 @@ def main(save_base_dir, seed):
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
     for i in range(10):

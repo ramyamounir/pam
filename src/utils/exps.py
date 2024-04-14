@@ -28,6 +28,21 @@ def accuracy_POLAR(gt, recall):
 
     return avg_iou/len(gt)
 
+def accuracy_BIN(gt, recall):
+    assert len(gt) == len(recall), "Groundtruth and Recall are not the same size"
+
+    avg_iou = 0.0
+    for g, r in zip(gt, recall):
+
+        g_sparsity, r_sparsity = sum(g)/len(g), sum(r)/len(r)
+        expected_iou = (g_sparsity*r_sparsity)/(g_sparsity+r_sparsity-(g_sparsity*r_sparsity))
+        iou = torch.sum(torch.logical_and(g, r))/torch.sum(torch.logical_or(g, r))
+        avg_iou += (iou - expected_iou)/(1.0 - expected_iou)
+
+
+    return avg_iou/len(gt)
+
+
 def set_seed(seed):
     """Set seed for reproducibility"""
     torch.manual_seed(seed)

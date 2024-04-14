@@ -148,6 +148,11 @@ class SDR():
     def iou(self, other):
         return self.overlap(other)/len(self+other)
 
+    def __iter__(self):
+        vals = self.ix[torch.randperm(len(self.ix))]
+        for i in vals:
+            yield SDR(self.N, ix=i)
+
     def __add__(self, other):
         return SDR(self.N, ix=torch.tensor(np.union1d(self.val,other.val)))
 
