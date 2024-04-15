@@ -33,20 +33,24 @@ def generate_correlated_SDR_patterns(P, N, b, W):
     sdrs = [vocab[i] for i in seq_ids]
     return sdrs
 
+# def generate_multiple_correlated_SDR_patterns(num_seqs, P, N, b, W):
+#     # higher b means more correlation -> smaller vocab size
+#     vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
+#     vocab = [SDR(N,W) for _ in range(vocab_size)]
+
+#     full_sdrs = []
+#     for _ in range(num_seqs):
+
+#         seq_ids = torch.cat([torch.randperm(vocab_size) for _ in range(int(P//vocab_size)+1)])[:P]
+#         sdrs = [vocab[i] for i in seq_ids]
+
+#         full_sdrs.append(sdrs)
+
+#     return full_sdrs
+
+
 def generate_multiple_correlated_SDR_patterns(num_seqs, P, N, b, W):
-    # higher b means more correlation -> smaller vocab size
-    vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
-    vocab = [SDR(N,W) for _ in range(vocab_size)]
-
-    full_sdrs = []
-    for _ in range(num_seqs):
-
-        seq_ids = torch.cat([torch.randperm(vocab_size) for _ in range(int(P//vocab_size)+1)])[:P]
-        sdrs = [vocab[i] for i in seq_ids]
-
-        full_sdrs.append(sdrs)
-
-    return full_sdrs
+    return [generate_correlated_SDR_patterns(P, N, b, W) for _ in range(num_seqs)]
 
 
 def add_noise_SDR_patterns(seq, e):

@@ -13,6 +13,8 @@ from src.utils.exps import checkdir, accuracy_SDR, accuracy_POLAR, set_seed
 from src.utils.configs import get_pam_configs, get_pc_configs, get_hn_configs
 from src.datasets.words import WordSequence
 
+
+
 def get_model(model, N, W, specs):
 
     if model.startswith('PAM'):
@@ -48,6 +50,7 @@ def train_model(seqs, net):
 
     elif isinstance(net, ModernAsymmetricHopfieldNetwork):
         pass
+
     else:
         raise ValueError("model not found")
 
@@ -73,60 +76,69 @@ def gen_words(seqs, net):
         return [net.recall_seqs(seq, X_polar, query='offline') for seq in X_polar]
 
 
-def decode_words(generated_words, X, net):
+def evaluate(net, words, seqs):
+
     if isinstance(net, PamModel):
-        words = []
-        for gen_word in generated_words:
-            word = ""
-            for gw in gen_word:
-                max_iou = torch.argmax(torch.tensor([gw.iou(v) for v in X.vocab])).item()
-                letter = X.s2w[max_iou]
-                word += letter
-            words.append(word)
-        return words
+        ious = []
+        for word in words:
+            iou = max([accuracy_SDR(gt[1:], word[1:]) for gt in seqs])
+            ious.append(iou.item())
+        return sum(ious)/len(ious)
 
-    else:
-        words = []
-        for gen_word in generated_words:
-            word = ""
-            for gw in gen_word:
-                gw = SDR.from_bin((gw+1.0)/2.0)
-                max_iou = torch.argmax(torch.tensor([gw.iou(v) for v in X.vocab])).item()
-                letter = X.s2w[max_iou]
-                word += letter
-            words.append(word)
-        return words
+    elif isinstance(net, SingleLayertPC):
+
+        X_polar = []
+        for seq in seqs:
+            X_polar.append(torch.stack([x.bin.float() for x in seq])*2.0-1.0)
+        X_polar = torch.stack(X_polar)
+
+        ious = []
+        for word in words:
+            iou = max([accuracy_POLAR(gt[1:], word[1:]) for gt in X_polar])
+            ious.append(iou.item())
+        return sum(ious)/len(ious)
+
+    elif isinstance(net, ModernAsymmetricHopfieldNetwork):
+
+        X_polar = []
+        for seq in seqs:
+            X_polar.append(torch.stack([x.bin.float() for x in seq])*2.0-1.0)
+        X_polar = torch.stack(X_polar)
+
+        ious = []
+        for word in words:
+            iou = max([accuracy_POLAR(gt[1:], word[1:]) for gt in X_polar])
+            ious.append(iou.item())
+
+        return sum(ious)/len(ious)
 
 
-def compute(N, num_words, model, num_gens, specs, seed=1):
+
+def compute(N, model, num_words_inc, specs, seed=1):
 
     W = int(specs['W']*N) if specs['W_type']=='percentage' else specs['W']
 
     ious = []
-    set_seed(seed)
-    X = WordSequence(N, W, num_words=num_words)
-    gt_words_set = set(X.word_data)
+    for num_words in num_words_inc:
 
-    net = get_model(model, N, W, specs)
-    train_model(X.seqs, net)
+        set_seed(seed)
+        X = WordSequence(N, W, num_words=num_words, seed=seed)
+        net = get_model(model, N, W, specs)
 
-    gen_set = set()
-    recalls = []
-    for gen_id in num_gens:
+        train_model(X.seqs, net)
         generated_words = gen_words(X.seqs, net)
-        decoded_words = decode_words(generated_words, X, net)
-        gen_set.update(decoded_words)
-        recalls.append(len(gt_words_set.intersection(gen_set))/len(gt_words_set))
+        ious.append(evaluate(net, generated_words, X.seqs))
 
-    return recalls
+    return ious
 
 
 
 
 def main(save_base_dir, seed):
 
-    models = ['PAM-1', 'PAM-4', 'PAM-8', 'PC-1', 'HN-1-50', 'HN-2-50']
-    num_gens = [1, 2, 3, 4, 5]
+    models = ['PAM-1', 'PAM-4', 'PAM-8', 'PAM-16', 'PC-1', 'HN-1-5', 'HN-1-50', 'HN-2-5', 'HN-2-50']
+    num_words_inc = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
     specs = {
             'PAM-1':{'N_k':1, 'W':5, 'W_type':'fixed', 'configs': get_pam_configs()},
             'PAM-4':{'N_k':4, 'W':5, 'W_type':'fixed', 'configs': get_pam_configs()},
@@ -141,31 +153,28 @@ def main(save_base_dir, seed):
             'HN-2-50': {'W':0.5, 'W_type':'percentage', 'configs': get_hn_configs(d=2)},
              }
 
-    for num_words in [1, 10, 100]:
-        print(f'Num words: {num_words}')
+    results = {}
+    for i, model in enumerate(models):
+        print(f'Model: {model}')
 
-        results = {}
-        for i, model in enumerate(models):
-            print(f'Model: {model}')
+        conf = dict(N = 100, 
+                    model=model, 
+                    num_words_inc=num_words_inc,
+                    specs=specs[model],
+                    seed=seed)
 
-            conf = dict(N = 100, 
-                        num_words=num_words,
-                        model=model, 
-                        num_gens=num_gens,
-                        specs=specs[model],
-                        seed=seed)
-
-            model_result = compute(**conf)
-            results[models[i]] = model_result
-
-
+        model_result = compute(**conf)
+        results[models[i]] = model_result
         print(results)
-        json.dump(results, open(os.path.join(save_base_dir, f'results_{num_words}_{str(seed).zfill(3)}.json'), 'w'))
-        args = dict(models=models, num_words=conf['num_words'], num_gens=num_gens, N=conf['N'], specs=specs)
-        torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{num_words}_{str(seed).zfill(3)}.pth'))
+
+    print(results)
+    json.dump(results, open(os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.json'), 'w'))
+    args = dict(models=models, num_words_inc=num_words_inc, N=conf['N'], specs=specs)
+    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.pth'))
 
 
 if __name__ == "__main__":
+
 
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'

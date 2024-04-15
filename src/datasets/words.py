@@ -1,17 +1,16 @@
 import sys; sys.path.append('./')
-from src.experiments.utils import to_torch
 import numpy as np
 import torch
 
-from src.models.pam_utils import SDR
+from src.utils.sdr import SDR
 
 
 class WordSequence():
-    def __init__(self, N, S, num_words=100, seed=1):
+    def __init__(self, N, W, num_words=100, seed=1):
         self.word_data = [line.strip() for line in open('data/words.txt', 'r').readlines() if len(line.strip())==4][:num_words]
         self.unique_ids = sorted(list(set("".join(self.word_data))))
 
-        self.vocab = [SDR(N, S) for _ in range(len(self.unique_ids))]
+        self.vocab = [SDR(N, W) for _ in range(len(self.unique_ids))]
         self.w2s = {u:s for u, s in zip(self.unique_ids, range(len(self.vocab)))}
         self.s2w = {s:u for u, s in zip(self.unique_ids, range(len(self.vocab)))}
         self.seqs = self.create_data()
