@@ -48,18 +48,19 @@ def backward_transfer(seqs, net):
     for seq_id, seq in enumerate(seqs):
 
         if isinstance(net, PamModel):
-            recall = net.generate_sequence_online(seq)
+            # recall = net.generate_sequence_online(seq)
+            recall = net.generate_sequence_offline(seq[0], len(seq)-1)
             metric = accuracy_SDR(seq[1:], recall[1:])
         elif isinstance(net, SingleLayertPC) or isinstance(net, MultilayertPC):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-            recall = net.recall_seq(X_polar, 'online')
+            recall = net.recall_seq(X_polar, 'offline')
             metric = accuracy_POLAR(X_polar[1:], recall[1:])
         elif isinstance(net, ModernAsymmetricHopfieldNetwork):
             X_polar = torch.stack([x.bin.float() for x in seq])*2.0-1.0
-            recall = net.recall_seq(X_polar, 'online')
+            recall = net.recall_seq(X_polar, 'offline')
             metric = accuracy_POLAR(X_polar[1:], recall[1:])
 
-        metrics.append(metric)
+        metrics.append(metric.item())
 
     return metrics
 
@@ -82,7 +83,7 @@ def compute(N, num_seqs, model, specs, seed=0):
 
 
 
-def main(save_base_dir, seed):
+def main(save_base_dir, ns, seed):
 
 
     models = ['PAM-1', 'PAM-4', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'HN-1-50', 'HN-2-50']
@@ -103,11 +104,11 @@ def main(save_base_dir, seed):
 
     results = {}
     for i, model in enumerate(models):
-        print(f'Current model: {model}')
+        # print(f'Current model: {model}')
 
         conf = dict(
                     N = 100, 
-                    num_seqs=10,
+                    num_seqs=ns,
                     model=model, 
                     specs=specs[model],
                     seed=seed)
@@ -116,9 +117,9 @@ def main(save_base_dir, seed):
         results[models[i]] = model_result
 
     print(results)
-    json.dump(results, open(os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.json'), 'w'))
+    json.dump(results, open(os.path.join(save_base_dir, f'results_{str(ns).zfill(2)}_{str(seed).zfill(3)}.json'), 'w'))
     args = dict( models=models, N=conf['N'], num_seqs=conf['num_seqs'], specs=specs)
-    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.pth'))
+    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(ns).zfill(2)}_{str(seed).zfill(3)}.pth'))
 
 
 
@@ -128,8 +129,9 @@ if __name__ == "__main__":
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    for i in range(10):
-        main(save_base_dir=save_base_dir, seed=i)
+    for ns in [1, 5, 10, 15, 20]:
+        for i in range(10):
+            main(save_base_dir=save_base_dir, ns=ns, seed=i)
 
 
 

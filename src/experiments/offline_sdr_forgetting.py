@@ -60,7 +60,7 @@ def backward_transfer(seqs, net):
             recall = net.recall_seq(X_polar, 'offline')
             metric = accuracy_POLAR(X_polar[1:], recall[1:])
 
-        metrics.append(metric)
+        metrics.append(metric.item())
 
     return metrics
 
@@ -87,7 +87,7 @@ def compute(N, P, num_seqs, model, bs, specs, seed=0):
 
 
 
-def main(save_base_dir, seed):
+def main(save_base_dir, ns, seed):
 
 
     models = ['PAM-1', 'PAM-4', 'PAM-8', 'PC-1', 'HN-1-50', 'HN-2-50']
@@ -109,12 +109,12 @@ def main(save_base_dir, seed):
 
     results = {}
     for i, model in enumerate(models):
-        print(f'Current model: {model}')
+        # print(f'Current model: {model}')
 
         conf = dict(
                     N = 100, 
                     P = 10,
-                    num_seqs=10,
+                    num_seqs=ns,
                     model=model, 
                     bs = bs,
                     specs=specs[model],
@@ -124,9 +124,9 @@ def main(save_base_dir, seed):
         results[models[i]] = model_result
 
     print(results)
-    json.dump(results, open(os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.json'), 'w'))
+    json.dump(results, open(os.path.join(save_base_dir, f'results_{str(ns).zfill(2)}_{str(seed).zfill(3)}.json'), 'w'))
     args = dict( models=models, bs=bs, P=conf['P'], N=conf['N'], num_seqs=conf['num_seqs'], specs=specs)
-    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(seed).zfill(3)}.pth'))
+    torch.save(dict(args=args, results=results), os.path.join(save_base_dir, f'results_{str(ns).zfill(2)}_{str(seed).zfill(3)}.pth'))
 
 
 
@@ -136,8 +136,9 @@ if __name__ == "__main__":
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    for i in range(10):
-        main(save_base_dir=save_base_dir, seed=i)
+    for ns in [10, 50, 100]:
+        for i in range(10):
+            main(save_base_dir=save_base_dir, ns=ns, seed=i)
 
 
 

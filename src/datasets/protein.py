@@ -7,7 +7,16 @@ from src.utils.exps import to_torch
 
 class ProteinSequence():
     def __init__(self, N, W):
-        self.protein_data = [line.strip() for line in open('data/proteinnet.txt', 'r').readlines()[1:2000:2]]
+        protein_data = [line.strip() for line in open('data/proteinnet.txt', 'r').readlines()[1:2000:2]]
+
+        # filter unique context for offline evaluation
+        protein_dataset = {}
+        for p in protein_data:
+            if p[0] in protein_dataset: protein_dataset[p[0]].append(p)
+            else: protein_dataset[p[0]] = [p]
+
+        # filtered data
+        self.protein_data = [v[torch.randperm(len(v))[0]] for k, v in protein_dataset.items()]
         self.unique_ids = sorted(list(set("".join(self.protein_data))))
 
         self.vocab = [SDR(N, W) for _ in range(len(self.unique_ids))]
