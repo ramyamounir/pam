@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import random
-import os, shutil
+import os, shutil, subprocess
 
 def accuracy_SDR(gt, recall):
     assert len(gt) == len(recall), "Groundtruth and Recall are not the same size"
@@ -51,6 +51,29 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
     random.seed(seed)
     np.random.seed(seed)
+
+
+class ImagesDatset(torch.utils.data.Dataset):
+    def __init__(self, images): self.images = images
+    def __len__(self): return len(self.images)
+    def __getitem__(self, idx): return self.images[idx], torch.tensor([0])
+
+
+def video_extract(video_input, video_output, snippet_size, height, width, output_ext):
+
+    video_output = os.path.join(video_output, f'frame_%10d.{output_ext}')
+    os.makedirs(os.path.dirname(video_output), exist_ok=True)
+
+    command = f'\
+        ffmpeg -i {video_input}\
+        -vf "fps={int(1.0/snippet_size)},\
+        scale={width}:{height}"\
+        -vsync vfr {video_output}\
+        -loglevel panic\
+        > /dev/null 2>&1'
+
+    process = subprocess.Popen(command, shell=True)
+    process.communicate()
 
 
 def to_np(x):

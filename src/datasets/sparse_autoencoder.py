@@ -12,112 +12,87 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 import sys; sys.path.append('./')
-from src.experiments.utils import checkdir
 
 
 class CNNEncoder(nn.Module):
-    def __init__(self, dim, n_channels=3):
-        super(CNNEncoder, self).__init__()
+    def __init__(self, N_c, img_height, img_width, n_channels=3):
+        super().__init__()
+        self.N_c = N_c
+        self.img_height = img_height
+        self.img_width = img_width
+        self.n_channels = n_channels
+
         self.conv1 = nn.Conv2d(n_channels, 32, kernel_size=3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
-        self.fc = nn.Linear(128 * 4 * 4, dim)
+        self.fc = nn.Linear(128 * int(img_height/8) * int(img_width/8), N_c)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = x.view(-1, 128 * 4 * 4)
+        x = x.view(-1, 128 * int(self.img_height/8) * int(self.img_width/8))
         x = F.tanh(self.fc(x))
         return x
 
 class CNNDecoder(nn.Module):
-    def __init__(self, dim, n_channels=3):
+    def __init__(self, N_c, img_height, img_width, n_channels=3):
         super().__init__()
-        self.fc = nn.Linear(dim, 128 * 4 * 4)  # Fully connected layer to upscale the feature vector
-        self.conv_transpose1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=0)  # Upsampling layer 1 ### 1 for CIFAR
+        self.N_c = N_c
+        self.img_height = img_height
+        self.img_width = img_width
+        self.n_channels = n_channels
+
+        self.fc = nn.Linear(N_c, 128 * int(img_height/8) * int(img_width/8))  # Fully connected layer to upscale the feature vector
+        self.conv_transpose1 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)  # Upsampling layer 1
         self.conv_transpose2 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)  # Upsampling layer 2
         self.conv_transpose3 = nn.ConvTranspose2d(32, n_channels, kernel_size=3, stride=2, padding=1, output_padding=1)   # Upsampling layer 3
 
     def forward(self, x):
         x = self.fc(x)
-        x = x.view(-1, 128, 4, 4)
+        x = x.view(-1, 128, int(self.img_height/8), int(self.img_width/8))
         x = F.relu(self.conv_transpose1(x))
         x = F.relu(self.conv_transpose2(x))
         x = self.conv_transpose3(x)
+        x = F.tanh(x) # maybe removeeeeeeeeee
         return x
 
-class BinAutoEncoder(nn.Module):
-    def __init__(self, dim, sparsity, n_channels=1, writer=None):
+class SparseAutoEncoder(nn.Module):
+    def __init__(self, N_c, W, img_height, img_width, n_channels):
         super().__init__()
-        self.encoder = CNNEncoder(dim, n_channels)
-        self.decoder = CNNDecoder(dim, n_channels)
-        self.sparsity = sparsity
-        self.active_duty_cycle = deque(maxlen=50)
+        self.encoder = CNNEncoder(N_c, img_height, img_width, n_channels)
+        self.decoder = CNNDecoder(N_c, img_height, img_width, n_channels)
+        self.W = W
         self.optim = torch.optim.Adam(self.parameters(), lr=1e-4)
-        self.writer = writer
-        self.counter = 0
-
-    def get_duty_cycle(self):
-        return torch.stack(list(self.active_duty_cycle)).mean((0,1))
-
-    def make_fig(self):
-        cycle = self.get_duty_cycle()
-        fig = plt.figure(figsize=(20, 6))  # Adjust figure size as needed
-        plt.bar(range(cycle.shape[0]), cycle.detach().cpu(), color='blue')
-        plt.xlabel('Neuron Id')
-        plt.ylabel('Duty Cycle')
-        plt.title('Active duty cycle of neurons')
-        return fig
-
 
     def optimize(self, loss):
         self.optim.zero_grad()
         loss.backward()
         self.optim.step()
 
-    def forward(self, imgs, bin_strength, boost=False):
+    def forward(self, imgs, strength):
         emb = self.encoder(imgs)
-        emb_bin = self.binarize(emb, BS=bin_strength, boost=boost)
+        emb_bin = self.binarize(emb, strength=strength)
         recon = self.decoder(emb_bin)
 
         recon_loss = F.mse_loss(imgs, recon)
         emb_loss = F.mse_loss(emb, emb_bin)
         self.optimize(0.5*recon_loss + 0.5*emb_loss)
+        return emb_bin, recon, recon_loss, emb_loss
 
-        self.writer['train/recon_loss'](recon_loss)
-        self.writer['train/emb_loss'](emb_loss)
+    def binarize(self, emb, strength):
 
-        if self.counter > 1000:
-            self.writer['train/duty_cycle'](self.make_fig())
-            self.counter = 0
-        else:
-            self.counter += 1
-
-        return emb_bin, recon_loss, recon
-
-    def binarize(self, emb, BS, boost):
-
-        if boost and len(self.active_duty_cycle)>100:
-            cycle = self.get_duty_cycle()
-            emb_01 = (emb+1.0)/2.0
-            mod = torch.exp(10*((1.0/512)-emb_01))
-            emb_mod = emb_01*mod
-            topk_indices = torch.topk(emb_mod, k=self.sparsity, dim=1)[1]
-        else:
-            topk_indices = torch.topk(emb, k=self.sparsity, dim=1)[1]
-
+        topk_indices = torch.topk(emb, k=self.W, dim=1)[1]
         mask = torch.full_like(emb, -1)
         mask.scatter_(1, topk_indices, 1.0)
         new_emb = emb - emb + mask
-        self.active_duty_cycle.append((mask+1.0)/2.0)
-        emb = BS*new_emb + (1-BS)*emb
+        emb = strength*new_emb + (1-strength)*emb
         return emb 
 
-    def encode(self, img, boost=False):
+    def encode(self, img):
         with torch.no_grad():
             emb = self.encoder(img)
-            emb_bin = self.binarize(emb, BS=1.0, boost=boost)
+            emb_bin = self.binarize(emb, strength=1.0)
 
         return emb_bin 
 
@@ -126,22 +101,13 @@ class BinAutoEncoder(nn.Module):
             img = self.decoder(sdr)
         return img
 
-
-
-class MNISTae():
-    def __init__(self, save_base_dir):
+class SAE_Trainer():
+    def __init__(self, N_c, W, img_height, img_width, n_channels, data_loader, save_base_dir):
         self.save_base_dir = save_base_dir
+        self.data_loader = data_loader
         self.create_writers()
 
-
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-        trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-        # trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-        # trainset = Subset(trainset, range(1000))
-        self.trainloader_dense = torch.utils.data.DataLoader(trainset, batch_size=10, shuffle=True, num_workers=1)
-
-
-        self.binAutoEncoder = BinAutoEncoder(dim=512, sparsity=51, n_channels=1, writer=self.writer).cuda()
+        self.SAE = SparseAutoEncoder(N_c=N_c, W=W, img_height=img_height, img_width=img_width, n_channels=n_channels).cuda()
 
     def create_writers(self):
         self.writer = TBWrapper(os.path.join(self.save_base_dir, 'logs'))
@@ -151,87 +117,74 @@ class MNISTae():
         self.writer(TBType.SCALAR, 'train/bin_sum')
         self.writer(TBType.SCALAR, 'train/bin_str')
         self.writer(TBType.IMAGE, 'train/bin_imgs')
-        self.writer(TBType.FIGURE, 'train/duty_cycle')
 
         self.writer(TBType.SCALAR, 'test/infer_loss')
-        self.writer(TBType.IMAGE, 'test/bin_infer_imgs')
+        self.writer(TBType.IMAGE, 'test/infer_imgs')
 
 
-    def train_one_epoch(self, e, n_epochs):
-
-        counter = 0
-        for imgs, _ in tqdm(self.trainloader_dense):
-            imgs = imgs.cuda()
-            bs = torch.clamp(torch.tensor((e+1)/n_epochs), 0.0, 1.0)
-            enc, loss, recon = self.binAutoEncoder(imgs, bin_strength=bs, boost=False)
-
-            # logging
-            self.writer['train/bin_str'](bs)
-            self.writer['train/bin_sum'](enc.sum())
-
-            if counter==1000:
-                self.writer['train/bin_imgs'](make_grid([imgs[0], recon[0]], nrow=2))
-                counter = 0
-            else:
-                counter += 1
-
-    def infer_bin(self):
-        
-        counter = 0
-        for imgs, _ in tqdm(self.trainloader_dense):
-
-            imgs = imgs.cuda()
-            sdrs = self.binAutoEncoder.encode(imgs, boost=False)
-            recon = self.binAutoEncoder.decode(sdrs)
-
-            # logging
-            if counter%10==0: 
-                self.writer['test/bin_infer_imgs'](make_grid([imgs[0], recon[0]], nrow=2))
-            counter += 1
-
-    def simple_infer(self):
+    def infer(self, log_images=False):
 
         counter = 0
         loss = 0.0
-        for imgs, _ in tqdm(self.trainloader_dense):
+        for imgs, _ in self.data_loader:
 
             imgs = imgs.cuda()
-            sdrs = self.binAutoEncoder.encode(imgs, boost=False)
-            recon = self.binAutoEncoder.decode(sdrs)
+            sdrs = self.SAE.encode(imgs)
+            recon = self.SAE.decode(sdrs)
 
             loss += F.mse_loss(imgs, recon)
+
             counter += 1
+            if log_images: 
+                im, rec = (imgs[0]+1.0)/2.0, (recon[0]+1.0)/2.0
+                self.writer['test/infer_imgs'](make_grid([im, rec], nrow=2))
 
-        loss_final = loss/counter
-        self.writer['test/infer_loss'](loss_final)
-        return loss_final
+        loss /= counter
+        self.writer['test/infer_loss'](loss)
+
+        return loss
 
 
-    def train(self):
+    def train_one_epoch(self, strength, log_images_every=1000):
+
+        counter = 0
+        for imgs, _ in tqdm(self.data_loader):
+            imgs = imgs.cuda()
+            emb, recon, recon_loss, emb_loss = self.SAE(imgs, strength=strength)
+
+            # logging
+            self.writer['train/bin_str'](strength)
+            self.writer['train/bin_sum'](((emb+1.0)/2.0).sum()/emb.shape[0])
+            self.writer['train/recon_loss'](recon_loss)
+            self.writer['train/emb_loss'](emb_loss)
+
+            if counter==log_images_every:
+                im, rec = (imgs[0]+1.0)/2.0, (recon[0]+1.0)/2.0
+                self.writer['train/bin_imgs'](make_grid([im, rec], nrow=2))
+                counter = 0
+            else: counter += 1
+
+
+
+    def train(self, n_epochs, log_images_every=1000):
 
         # train and save
         prev_inf_loss = math.inf
-        n_epochs = 10
         for e in range(n_epochs):
-            self.train_one_epoch(e, n_epochs)
-            inf_loss = self.simple_infer()
 
+            strength = torch.clamp(torch.tensor((e+1)/n_epochs), 0.0, 1.0)
+            self.train_one_epoch(strength, log_images_every)
+
+            inf_loss = self.infer(log_images=False)
             if inf_loss < prev_inf_loss:
-                torch.save(self.binAutoEncoder.state_dict(), os.path.join(self.save_base_dir, 'weights.pth'))
+                torch.save(self.SAE.state_dict(), os.path.join(self.save_base_dir, 'weights.pth'))
                 prev_inf_loss = inf_loss
 
         # load and test
-        self.binAutoEncoder.load_state_dict(torch.load(os.path.join(self.save_base_dir, 'weights.pth')))
-        inf_loss = self.simple_infer()
-        self.infer_bin()
+        self.SAE.load_state_dict(torch.load(os.path.join(self.save_base_dir, 'weights.pth')))
+        inf_loss = self.infer(log_images=True)
+        print(f"Inference Loss: {inf_loss}")
 
 
-if __name__ == "__main__":
-
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_test'
-    assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
-
-    ae = MNISTae(save_base_dir)
-    ae.train()
 
 
