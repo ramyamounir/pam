@@ -30,10 +30,10 @@ std_df = pd.concat(dfs).groupby(level=0).std()
 
 # Plot the DataFrame
 sns.set(style="darkgrid", context="talk")  # Set the style
-plt.figure(figsize=(8, 6))  # Set the figure size
+plt.figure(figsize=(6, 6))  # Set the figure size
 
 for column in mean_df.columns:
-    sns.lineplot(data=mean_df[column], marker='o', markersize=20, dashes=False, color=method_colors[column], label=column)
+    sns.lineplot(data=mean_df[column], marker='o', markersize=10, dashes=False, color=method_colors[column], label=column)
     plt.fill_between(mean_df.index, mean_df[column]-std_df[column], mean_df[column] + std_df[column], alpha=0.2, color=method_colors[column])
 
 plt.tick_params(axis='x', length=10, width=2, direction='inout', which='both')
@@ -41,10 +41,15 @@ plt.tick_params(axis='y', length=10, width=2, direction='inout', which='both')
 plt.grid(which='both', linestyle='--')
 
 plt.yscale('log')
+plt.ylim([2,2000])
 plt.xticks(mean_df.index)
 plt.title('Sequence Capacity Vs. Correlation')
 plt.xlabel('Correlation')
-plt.ylabel(r'$P_{max}$')
+plt.ylabel(r'$T_{max}$')
+plt.legend().set_visible(False)
 
-plt.show()  # Show the plot
+# plt.show()  # Show the plot
+plt.savefig('./results/figures/offline_capacity_corr.svg', format='svg', dpi=600, bbox_inches='tight')
+
+
 

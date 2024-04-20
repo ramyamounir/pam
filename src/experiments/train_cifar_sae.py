@@ -18,7 +18,7 @@ def main(save_base_dir):
     dataset = torch.utils.data.Subset(dataset, torch.randperm(len(dataset))[:100])
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=10, shuffle=True, num_workers=1)
 
-    sae_trainer = SAE_Trainer(N_c=256, W=25, img_height=32, img_width=32, n_channels=3, data_loader=data_loader, save_base_dir=save_base_dir)
+    sae_trainer = SAE_Trainer(N_c=200, W=10, img_height=32, img_width=32, n_channels=3, data_loader=data_loader, save_base_dir=save_base_dir)
     sae_trainer.train(n_epochs=1000, log_images_every=2)
 
     # save data

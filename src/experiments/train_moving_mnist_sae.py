@@ -22,7 +22,7 @@ def main(save_base_dir):
 
 
     data_loader = torch.utils.data.DataLoader(imgs_dataset, batch_size=10, shuffle=True, num_workers=1)
-    sae_trainer = SAE_Trainer(N_c=100, W=5, img_height=imgs.shape[-2], img_width=imgs.shape[-1], n_channels=imgs.shape[-3], data_loader=data_loader, save_base_dir=save_base_dir)
+    sae_trainer = SAE_Trainer(N_c=100, W=5, img_height=imgs.shape[-2], img_width=imgs.shape[-1], n_channels=imgs.shape[-3], data_loader=data_loader, save_base_dir=save_base_dir, lr=1e-4)
     sae_trainer.train(n_epochs=1000, log_images_every=10)
 
     # save data
@@ -53,9 +53,9 @@ def main(save_base_dir):
 if __name__ == "__main__":
 
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_001'
-    assert checkdir(save_base_dir, careful=True), f'path {save_base_dir} exists'
+    assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    set_seed(0)
+    set_seed(2)
     main(save_base_dir=save_base_dir)
 
 

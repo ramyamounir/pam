@@ -1,5 +1,6 @@
 import seaborn as sns
 
+
 method_names = {
     'PAM-1': 'PAM $N_k=1$', 
     'PAM-4': 'PAM $N_k=4$', 
@@ -14,6 +15,9 @@ method_names = {
     'HN-2-50': 'AHN d=2, W=$0.5N_c$',
         }
 
+palette = sns.color_palette(n_colors=10)
+palette.append((0.23, 0.20, 0.75))
+
 method_ids = { v: i for i, (k, v) in enumerate(method_names.items())}
-method_colors = {v:c for (k, v), c in zip(method_names.items(), sns.color_palette(n_colors=len(method_names)))}
+method_colors = {v:c for (k, v), c in zip(method_names.items(), palette)}
 

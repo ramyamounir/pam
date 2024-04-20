@@ -136,7 +136,7 @@ def compute(N, model, num_words_inc, specs, seed=1):
 
 def main(save_base_dir, seed):
 
-    models = ['PAM-1', 'PAM-4', 'PAM-8', 'PAM-16', 'PC-1', 'HN-1-5', 'HN-1-50', 'HN-2-5', 'HN-2-50']
+    models = ['PAM-1', 'PAM-4', 'PAM-8', 'PC-1', 'HN-1-5', 'HN-1-50', 'HN-2-5', 'HN-2-50']
     num_words_inc = [1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
     specs = {

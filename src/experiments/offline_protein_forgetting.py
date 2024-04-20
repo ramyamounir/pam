@@ -129,7 +129,7 @@ if __name__ == "__main__":
     save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
-    for ns in [1, 5, 10, 15, 20]:
+    for ns in [2, 5, 10, 15, 20]:
         for i in range(10):
             main(save_base_dir=save_base_dir, ns=ns, seed=i)
 

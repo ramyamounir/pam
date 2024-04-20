@@ -6,25 +6,6 @@ from src.utils.exps import to_torch
 from src.utils.sdr import SDR
 
 
-def generate_correlated_binary_patterns(P, N, b, device, seed=1):
-    np.random.seed(seed)
-    X = np.zeros((int(P), int(N)))
-    template = np.random.choice([-1, 1], size=N)
-    prob = (1 + b) / 2
-    for i in range(P):
-        for j in range(N):
-            if np.random.binomial(1, prob) == 1:
-                X[i, j] = template[j]
-            else:
-                X[i, j] = -template[j]
-
-
-        # revert the sign
-        if np.random.binomial(1, 0.5) == 1:
-            X[i, j] *= -1
-
-    return to_torch(X, device)
-
 def generate_correlated_SDR_patterns(P, N, b, W):
     # higher b means more correlation -> smaller vocab size
     vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
@@ -32,21 +13,6 @@ def generate_correlated_SDR_patterns(P, N, b, W):
     seq_ids = torch.cat([torch.randperm(vocab_size) for _ in range(int(P//vocab_size)+1)])[:P]
     sdrs = [vocab[i] for i in seq_ids]
     return sdrs
-
-# def generate_multiple_correlated_SDR_patterns(num_seqs, P, N, b, W):
-#     # higher b means more correlation -> smaller vocab size
-#     vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
-#     vocab = [SDR(N,W) for _ in range(vocab_size)]
-
-#     full_sdrs = []
-#     for _ in range(num_seqs):
-
-#         seq_ids = torch.cat([torch.randperm(vocab_size) for _ in range(int(P//vocab_size)+1)])[:P]
-#         sdrs = [vocab[i] for i in seq_ids]
-
-#         full_sdrs.append(sdrs)
-
-#     return full_sdrs
 
 
 def generate_multiple_correlated_SDR_patterns(num_seqs, P, N, b, W):
@@ -62,14 +28,55 @@ def add_noise_SDR_patterns(seq, e):
 
     return noisy_seq
 
-def generate_multiple_words_SDRs(words, N, W):
-    unique_ids = sorted(list(set("".join(words))))
-    vocab = [SDR(N, W) for _ in range(len(unique_ids))]
-    w2s = {u:s for u, s in zip(unique_ids, range(len(vocab)))}
-    s2w = {s:u for u, s in zip(unique_ids, range(len(vocab)))}
-    return [[vocab[w2s[w]] for w in word_seq] for word_seq in words]
+def generate_correlated_SDR_from_data(data, P, b):
+    assert P <= data['sdrs'].shape[0], "Not enough data, use lower P"
+
+    # sample
+    vocab_size = int(max(round(1.0-b, 3)*P, 1.0))
+    ixs = torch.randperm(data['sdrs'].shape[0])[:vocab_size]
+    seq_ids = torch.cat([ixs for _ in range(int(P//vocab_size)+1)])[:P]
+    seq_ids = seq_ids[torch.randperm(len(seq_ids))]
+
+    imgs = ((data['imgs'][seq_ids]+1.0)/2.0)
+    sdrs = [SDR(N=s.shape[0], ix=torch.where(s==1.0)[0].cpu()) for s in data['sdrs'][seq_ids]]
+    recons = ((data['recons'][seq_ids]+1.0)/2.0)
+
+    return imgs, sdrs, recons
+
+def generate_video_SDR_from_data(data, P, seq_id=None):
+    assert P <= len(data['sdrs'][0]), "Not enough data, use lower P"
+
+    if seq_id == None: ix = torch.randperm(len(data['sdrs']))[0]
+    else: ix=seq_id
+
+    ix_in = torch.linspace(0, len(data['sdrs'][ix])-1, P).long()
+    mask = torch.zeros((len(data['sdrs'][ix]),)).bool()
+    mask[ix_in] = True
+
+    imgs = ((data['imgs'][ix][mask]+1.0)/2.0)
+    sdrs = [SDR(N=s.shape[0], ix=torch.where(s==1.0)[0].cpu()) for s in data['sdrs'][ix][mask]]
+    recons = ((data['recons'][ix][mask]+1.0)/2.0)
+
+    return imgs, sdrs, recons
 
 
+def generate_multiple_video_SDR_from_data(data, num_seq, P):
+    assert P <= len(data['sdrs'][0]), "Not enough data, use lower P"
+
+    seq_ix = torch.randperm(len(data['sdrs']))[:num_seq]
+
+    ix_in = torch.linspace(0, len(data['sdrs'][seq_ix][0])-1, P).long()
+    mask = torch.zeros((len(data['sdrs'][seq_ix][0]),)).bool()
+    mask[ix_in] = True
+
+    imgs = ((data['imgs'][seq_ix][:,mask]+1.0)/2.0)
+    sdrs = [ [SDR(N=s.shape[0], ix=torch.where(s==1.0)[0].cpu()) for s in seq] for seq in data['sdrs'][seq_ix][:,mask]]
+    recons = ((data['recons'][seq_ix][:,mask]+1.0)/2.0)
+
+    return imgs, sdrs, recons
+
+
+    
 
 if __name__ == "__main__":
     # p = generate_correlated_binary_patterns(10, 5, 1.0, 'cuda')

@@ -58,12 +58,12 @@ class CNNDecoder(nn.Module):
         return x
 
 class SparseAutoEncoder(nn.Module):
-    def __init__(self, N_c, W, img_height, img_width, n_channels):
+    def __init__(self, N_c, W, img_height, img_width, n_channels, lr=1e-4):
         super().__init__()
         self.encoder = CNNEncoder(N_c, img_height, img_width, n_channels)
         self.decoder = CNNDecoder(N_c, img_height, img_width, n_channels)
         self.W = W
-        self.optim = torch.optim.Adam(self.parameters(), lr=1e-4)
+        self.optim = torch.optim.Adam(self.parameters(), lr=lr)
 
     def optimize(self, loss):
         self.optim.zero_grad()
@@ -102,12 +102,12 @@ class SparseAutoEncoder(nn.Module):
         return img
 
 class SAE_Trainer():
-    def __init__(self, N_c, W, img_height, img_width, n_channels, data_loader, save_base_dir):
+    def __init__(self, N_c, W, img_height, img_width, n_channels, data_loader, save_base_dir, lr=1e-4):
         self.save_base_dir = save_base_dir
         self.data_loader = data_loader
         self.create_writers()
 
-        self.SAE = SparseAutoEncoder(N_c=N_c, W=W, img_height=img_height, img_width=img_width, n_channels=n_channels).cuda()
+        self.SAE = SparseAutoEncoder(N_c=N_c, W=W, img_height=img_height, img_width=img_width, n_channels=n_channels, lr=lr).cuda()
 
     def create_writers(self):
         self.writer = TBWrapper(os.path.join(self.save_base_dir, 'logs'))
