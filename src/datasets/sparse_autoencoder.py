@@ -54,7 +54,7 @@ class CNNDecoder(nn.Module):
         x = F.relu(self.conv_transpose1(x))
         x = F.relu(self.conv_transpose2(x))
         x = self.conv_transpose3(x)
-        x = F.tanh(x) # maybe removeeeeeeeeee
+        x = F.tanh(x)
         return x
 
 class SparseAutoEncoder(nn.Module):
