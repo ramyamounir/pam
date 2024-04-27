@@ -88,6 +88,7 @@ def search_Pmax(Ns, tolerance, model, start, specs, seed):
                 net = PamModel(N_c=N, N_k=specs['N_k'], W=W, **specs['configs'])
                 net.learn_sequence(X)
                 recall = net.generate_sequence_offline(X[0], len(X)-1)
+                # recall = net.generate_sequence_online(X)
                 iou = accuracy_SDR(X[1:], recall[1:])
 
             elif model.startswith('PC'):
@@ -100,13 +101,15 @@ def search_Pmax(Ns, tolerance, model, start, specs, seed):
 
                 losses = net.train_seq(X_polar)
                 recall = torch.sign(net.recall_seq(X_polar, query='offline'))
+                # recall = torch.sign(net.recall_seq(X_polar, query='online'))
                 iou = accuracy_POLAR(X_polar[1:], recall[1:])
 
             elif model.startswith('HN'):
                 X_polar = torch.stack([x.bin.float() for x in X])*2.0-1.0
 
                 net = ModernAsymmetricHopfieldNetwork(input_size=N, **specs['configs'])
-                recall = net.recall_seq(X_polar, query='online')
+                recall = net.recall_seq(X_polar, query='offline')
+                # recall = net.recall_seq(X_polar, query='online')
                 iou = accuracy_POLAR(X_polar[1:], recall[1:])
 
             finder.value = iou

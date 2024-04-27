@@ -126,8 +126,7 @@ def compute(N, model, specs, P, es, seed):
 
 def main(save_base_dir, data_base_dir_5, data_base_dir_50, N, seed):
 
-    # models = ['PAM-8', 'HN-1-50', 'HN-2-50', 'PC-1', 'PC-2']
-    models = ['HN-1-50', 'HN-2-50']
+    models = ['PAM-8', 'HN-1-50', 'HN-2-50', 'PC-1', 'PC-2']
 
     specs = {
             'PAM-1':{'N_k':1, 'W':0.05, 'W_type':'percentage', 'data_dir':data_base_dir_5, 'configs': get_pam_configs()},
@@ -174,8 +173,8 @@ def main(save_base_dir, data_base_dir_5, data_base_dir_50, N, seed):
 if __name__ == "__main__":
 
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
-    assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_003'
+    assert checkdir(save_base_dir, careful=True), f'path {save_base_dir} exists'
 
     for i in range(10):
         main(save_base_dir=os.path.join(save_base_dir, 'clevrer'), 

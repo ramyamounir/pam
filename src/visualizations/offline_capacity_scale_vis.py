@@ -18,35 +18,38 @@ def get_dfs(files):
     for file in files:
         data = json.load(open(file, 'r'))
         df = pd.DataFrame(data)
-        df = df.drop(columns=['PAM-1', 'HN-2-50'])
         df = df.rename(columns=method_names)
-        df.index = [10, 50, 100]
+        df.index = range(10, 60, 10)
         dfs.append(df)
     return dfs
 
 
-df = get_dfs(glob('results/offline_time/run_002/*.json'))[0]
+dfs = get_dfs(glob('results/offline_capacity_N/run_003/*.json'))
+
+mean_df = pd.concat(dfs).groupby(level=0).mean()
+std_df = pd.concat(dfs).groupby(level=0).std()
 
 
 # Plot the DataFrame
 sns.set(style="darkgrid", context="talk")  # Set the style
 plt.figure(figsize=(6, 6))  # Set the figure size
 
-for column in df.columns:
-    sns.lineplot(data=df[column], marker='o', markersize=10, dashes=False, color=method_colors[column], label=column)
+for column in mean_df.columns:
+    sns.lineplot(data=mean_df[column], marker='o', markersize=10, dashes=False, color=method_colors[column], label=column)
+    plt.fill_between(mean_df.index, mean_df[column]-std_df[column], mean_df[column] + std_df[column], alpha=0.2, color=method_colors[column])
 
 plt.tick_params(axis='x', length=10, width=2, direction='inout', which='both')
 plt.tick_params(axis='y', length=10, width=2, direction='inout', which='both')
 plt.grid(which='both', linestyle='--')
 
-plt.yscale('log')
-plt.xticks(df.index)
-plt.title('Time Vs Sequence Length')
-plt.xlabel('Sequence Length')
-plt.ylabel('Time (s)')
+# plt.yscale('log')
+# plt.ylim([2,2000])
+plt.xticks(mean_df.index)
+plt.title('Offline Sequence Capacity Vs. Input Size')
+plt.xlabel(r'$N_c$')
+plt.ylabel(r'$T_{max}$')
 plt.legend().set_visible(False)
 
 # plt.show()  # Show the plot
-plt.savefig('./results/figures/offline_capacity_N.svg', format='svg', dpi=600, bbox_inches='tight')
-
+plt.savefig('./results/figures/offline_capacity_scale.svg', format='svg', dpi=600, bbox_inches='tight')
 

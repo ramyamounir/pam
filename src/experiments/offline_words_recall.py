@@ -167,7 +167,7 @@ def main(save_base_dir, seed):
 
 if __name__ == "__main__":
 
-    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_002'
+    save_base_dir = f'results/{os.path.splitext(os.path.basename(__file__))[0]}/run_test'
     assert checkdir(save_base_dir, careful=False), f'path {save_base_dir} exists'
 
     for i in range(10):

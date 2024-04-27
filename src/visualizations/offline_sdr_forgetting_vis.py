@@ -69,27 +69,3 @@ plt.legend().set_visible(False)
 # plt.show()  # Show the plot
 plt.savefig('./results/figures/sdr_forgetting.svg', format='svg', dpi=600, bbox_inches='tight')
 
-
-
-# quit()
-# Get legend in a separate plot
-
-fig_legend = plt.figure(figsize=(20, 1))
-include = ['PAM-4', 'PAM-8', 'PAM-16', 'PAM-24', 'PC-1', 'PC-2', 'HN-1-5', 'HN-2-5', 'HN-1-50', 'HN-2-50']
-for i in include:
-    name = method_names[i]
-    sns.lineplot(x=[0], y=[0], marker='o', markersize=10, dashes=False, color=method_colors[name], label=name) # adding extra label
-handles, labels = plt.gca().get_legend_handles_labels()
-sns.set(style="white", context="talk")
-fig_legend = plt.gca()
-fig_legend.set_xticks([])
-fig_legend.set_yticks([])
-fig_legend.set_axis_off()
-fig_legend.spines['top'].set_visible(False)
-fig_legend.spines['right'].set_visible(False)
-fig_legend.spines['bottom'].set_visible(False)
-fig_legend.spines['left'].set_visible(False)
-plt.legend(handles, labels, loc='center', ncol=len(handles), bbox_to_anchor=(0.5, 0.0), borderaxespad=0, frameon=True)
-
-# plt.show()
-plt.savefig('./results/figures/legend2.svg', format='svg', dpi=600, bbox_inches='tight')
