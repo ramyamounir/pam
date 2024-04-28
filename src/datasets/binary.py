@@ -1,3 +1,8 @@
+""" 
+Helper functions for generating SDR patterns
+"""
+
+
 import sys; sys.path.append('./')
 import numpy as np
 import torch
@@ -77,15 +82,4 @@ def generate_multiple_video_SDR_from_data(data, num_seq, P):
 
 
     
-
-if __name__ == "__main__":
-    # p = generate_correlated_binary_patterns(10, 5, 1.0, 'cuda')
-    # print(p)
-
-    p = generate_correlated_SDR_patterns(20, 100, 0.1, 5)
-    [print(p1) for p1 in p]
-    print('\n')
-    p = add_noise_SDR_patterns(p, 0.5)
-    [print(p1) for p1 in p]
-    quit()
 

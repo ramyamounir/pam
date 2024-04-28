@@ -163,15 +163,12 @@ class PamModel:
         a += bs*((1/self.N_k)-boost_factor).reshape(a.shape) + torch.normal(mean=0.0, std=0.1, size=a.shape)
         return a
 
-    def stick(self, a):
+    def threshold_a(self, a):
         a = a.reshape(self.N_c, self.N_k)
         a_best = torch.zeros_like(a)
         a_best[a >= self.W*self.transition_configs['threshold']] = 1.0
         a_best += torch.normal(mean=0.0, std=0.01, size=a_best.shape)
         return a_best
-
-    def record_duty(self, z):
-        self.duty_cycle += z.bin.reshape(self.N_c, self.N_k)
 
     def encode_start(self, feature):
         return SDR.from_bin(torch.logical_and(feature.bin, self.start_sdr.bin))
@@ -207,7 +204,7 @@ class PamModel:
 
             # train transition
             a = self.transition(z)
-            z_new = p.expand(self.N_k).intersect(self.create_max_sdr(self.stick(a)))
+            z_new = p.expand(self.N_k).intersect(self.create_max_sdr(self.threshold_a(a)))
 
             for i in range(1000):
                 self.transition.train_A(z, z_new)
@@ -223,6 +220,7 @@ class PamModel:
             z = z_new
 
     def recall_sequence_online(self, sequence):
+        """ only used for debugging"""
         recall = [sequence[0]]
         z = self.encode_start(sequence[0].expand(self.N_k))
         for p in sequence[1:]:
@@ -256,6 +254,7 @@ class PamModel:
 
 
     def recall_sequence_offline(self, x_in_sdr, seq_len):
+        """ only used for debugging"""
         recall = [x_in_sdr]
         z = self.encode_start(x_in_sdr.expand(self.N_k))
         for _ in range(seq_len):
