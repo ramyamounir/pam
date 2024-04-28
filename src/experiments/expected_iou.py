@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 
 import sys; sys.path.append('./')
-from src.models.pam_utils import SDR
+from src.utils.sdr import SDR
 
 import pandas as pd
 import seaborn as sns
@@ -37,8 +37,7 @@ df = pd.DataFrame(results)
 
 
 # Plot the DataFrame
-sns.set(style="darkgrid")  # Set the style
-sns.set_context("poster")
+sns.set(style="darkgrid", context="talk")  # Set the style
 plt.figure(figsize=(8, 6))  # Set the figure size
 
 sns.lineplot(x=q_range, y=results['Analytical_0.1'],label='Analytical p=0.1')
@@ -52,10 +51,11 @@ plt.tick_params(axis='x', length=10, width=2, direction='inout', which='both')
 plt.tick_params(axis='y', length=10, width=2, direction='inout', which='both')
 plt.grid(which='both', linestyle='--')
 
-plt.title('Analytical Vs. Empirical IoU')
+plt.title('Analytical Vs. Empirical Expected IoU')
 plt.xlabel('q')
-plt.ylabel('IoU')
-plt.show()  # Show the plot
+plt.ylabel('Expected IoU')
+# plt.show()  # Show the plot
+plt.savefig('./results/figures/expected_iou.svg', format='svg', dpi=600, bbox_inches='tight')
 
 
 
