@@ -11,16 +11,13 @@ Official repository for the paper "[Predictive Attractor Models](https://arxiv.o
 1. Clone repository
 ```sh
 git clone git@github.com:ramyamounir/pam.git
+cd pam
 ```
-
 
 2. Create and activate conda environment 
 ```sh
-conda create -n pamenv python=3.11 -y 
+conda env create -f env.yml
 conda activate pamenv
-
-# Install pytorch
-conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia
 ```
 
 3. Use PamModel to learn and generate sequences
@@ -55,6 +52,25 @@ print(accuracy_SDR(seq1, recall))
 --- 
 
 ## Paper Results Reproducibility
+
+* We provide scripts for all experiments in the paper and supplementary results. The scripts are provided in the `src/experiments` directory.
+* Vision experiments require running the sparse auto-encoder scripts, which are also provided under `src/experiments`.
+* The `data` directory should contain the raw datasets. We have included ProteinNet and Words, but others (e.g., Moving MNIST, CLEVRER) should be downloaded from the respective sources.
+
+---
+
+
+Citing PAM
+-------
+If you find our approaches useful in your research, you can cite our paper:
+```
+@inproceedings{mounir2024predictive,
+  title={Predictive Attractor Models},
+  author={Mounir, Ramy and  Sarkar, Sudeep},
+  booktitle={Thirty-eighth Conference on Neural Information Processing Systems},
+  year={2024}
+}
+```
 
 
 
